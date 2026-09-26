@@ -41,3 +41,37 @@ jobs:
             artifacts/
       - if: always()
         run: docker compose stop
+  vps-images:
+    needs: identity-groups
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev-vps'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image names
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "API_IMAGE=ghcr.io/${OWNER,,}/lab-manager-api:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "WEB_IMAGE=ghcr.io/${OWNER,,}/lab-manager-web:${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Build release images outside the VPS
+        run: |
+          docker build -f infra/docker/api.Dockerfile -t "$API_IMAGE" .
+          docker build -f infra/docker/web.Dockerfile -t "$WEB_IMAGE" .
+      - name: Verify constrained release stack
+        run: python3 tools/smoke-vps.py --api-image "$API_IMAGE" --web-image "$WEB_IMAGE"
+      - name: Sign in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Publish verified commit images
+        run: |
+          docker push "$API_IMAGE"
+          docker push "$WEB_IMAGE"
+          echo "API: \`$API_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Web: \`$WEB_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        run: docker logout ghcr.io

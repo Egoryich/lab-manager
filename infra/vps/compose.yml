@@ -1,0 +1,95 @@
+name: lab-manager
+x-logging: &logging
+  driver: local
+  options:
+    max-size: "5m"
+    max-file: "2"
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    mem_limit: 160m
+    shm_size: 32m
+    pids_limit: 100
+    logging: *logging
+    environment:
+      POSTGRES_USER: lab
+      POSTGRES_DB: lab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate the deployment env file}
+    command: [postgres, -c, shared_buffers=32MB, -c, work_mem=2MB, -c, maintenance_work_mem=16MB, -c, max_connections=20, -c, max_wal_size=128MB, -c, min_wal_size=32MB]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U lab -d lab]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7.4.6-bookworm
+    restart: unless-stopped
+    mem_limit: 48m
+    pids_limit: 32
+    logging: *logging
+    command: [redis-server, --save, "", --appendonly, "no", --maxmemory, 24mb, --maxmemory-policy, noeviction]
+    networks: [backend]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    image: ${LAB_API_IMAGE:?Set a verified immutable image tag}
+    restart: unless-stopped
+    mem_limit: 320m
+    pids_limit: 100
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    environment:
+      LAB_ENVIRONMENT: production
+      LAB_DATABASE_URL: postgresql+psycopg://lab:${POSTGRES_PASSWORD}@postgres:5432/lab
+      LAB_REDIS_URL: redis://redis:6379/0
+      LAB_ENCRYPTION_KEY: ${LAB_ENCRYPTION_KEY:?Generate the deployment env file}
+      LAB_DIGEST_KEY: ${LAB_DIGEST_KEY:?Generate the deployment env file}
+      LAB_PUBLIC_ORIGIN: ${LAB_PUBLIC_ORIGIN:?Set the public HTTPS origin}
+      LAB_PASSWORD_HASH_CONCURRENCY: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    # Only host Caddy and this private service network are trusted proxies.
+    # Never publish this port on 0.0.0.0 or attach untrusted containers here.
+    command: [/app/.venv/bin/uvicorn, 'lab_manager.main:create_app', --factory, --host, 0.0.0.0, --port, "8000", --proxy-headers, --forwarded-allow-ips, '*', --no-access-log, --limit-concurrency, "64"]
+    ports: ["127.0.0.1:18000:8000"]
+    networks: [backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /app/.venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+  web:
+    image: ${LAB_WEB_IMAGE:?Set a verified immutable image tag}
+    restart: unless-stopped
+    mem_limit: 32m
+    pids_limit: 32
+    read_only: true
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    ports: ["127.0.0.1:18080:8080"]
+    networks: [frontend]
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8080/]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+networks:
+  backend:
+  frontend:
+volumes:
+  postgres-data:
