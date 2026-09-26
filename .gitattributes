@@ -1,0 +1,3 @@
+* text=auto eol=lf
+# Preserve the byte-identical source specification and its recorded hash.
+LAB_MANAGER_CODEX_SPEC.md -text

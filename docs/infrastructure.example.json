@@ -1,0 +1,96 @@
+{
+  "status": "PRODUCT_DECISIONS_CONFIRMED_HARDWARE_PENDING",
+  "contains_secrets": false,
+  "node": {
+    "cpu_model": null,
+    "physical_cores": null,
+    "logical_threads": null,
+    "ram_mib": null,
+    "proxmox_version": null,
+    "cluster_scope": null,
+    "storage_backend": null,
+    "storage_total_bytes": null,
+    "thin_provisioning": null,
+    "raid_or_redundancy": null,
+    "nic_vlan_capability": null,
+    "ups": null
+  },
+  "vps": {
+    "os": null,
+    "vcpu": null,
+    "ram_mib": null,
+    "disk_bytes": null,
+    "monthly_traffic_limit_bytes": null,
+    "public_domain": null
+  },
+  "network": {
+    "management_cidrs": [],
+    "organization_cidrs": [],
+    "bmc_cidrs": [],
+    "student_available_cidrs": [],
+    "wireguard_cidr": null,
+    "local_uplink_mbps": null,
+    "egress_policy": "TEMPLATE_PROFILE_INTERNET_ON_OFF",
+    "browser_only_scope": "SYSTEM_PROVIDED_ACCESS_ONLY_OUTBOUND_GUEST_TUNNELS_ALLOWED",
+    "segmentation": [
+      "ISOLATED",
+      "GROUP_LAN",
+      "ENVIRONMENT_NAMED_SEGMENTS"
+    ]
+  },
+  "power": {
+    "provider_kind": "TUYA_CLOUD_PCIE_PWR_RESET",
+    "api_url": "https://openapi.tuyaeu.com",
+    "command_path": "/v1.0/iot-03/devices/{device_id}/commands",
+    "status_path": "/v1.0/iot-03/devices/{device_id}/status",
+    "power_on": {
+      "code": "switch_1",
+      "value": true
+    },
+    "power_off": {
+      "code": "switch_1",
+      "value": false,
+      "role": "NOT_DEFAULT_FIRMWARE_BEHAVIOR_TO_VERIFY"
+    },
+    "reset": {
+      "code": "ModeReset",
+      "value": "Reset",
+      "role": "ADMIN_ONLY"
+    },
+    "force_reset": {
+      "code": "ModeReset",
+      "value": "forceReset",
+      "role": "ADMIN_EMERGENCY_ONLY"
+    },
+    "ignored_mode_reset_value": "0",
+    "pc_power_status_datapoint": null,
+    "board_online_is_pc_power": false,
+    "independent_connectivity_when_node_off": "STANDBY_POWER_AND_WIFI_TO_VERIFY",
+    "normal_host_shutdown": "PROXMOX_AGENT_AFTER_DRAIN"
+  },
+  "identity": {
+    "mode": "LOCAL",
+    "student_registration_policy": "SELF_REGISTRATION_STUDENT_ROLE_ONLY",
+    "teacher_creation": "ADMIN",
+    "account_recovery_policy": "ADMIN_ISSUED_SINGLE_USE_RESET"
+  },
+  "data_protection": {
+    "archive_mode": "SOFT_ARCHIVE_SAME_PROXMOX_DISKS",
+    "backup_feature_enabled": false,
+    "snapshot_access": "ADMIN_ONLY",
+    "qemu_end_session": "HIBERNATE_TO_DISK",
+    "lxc_end_session": "SHUTDOWN_PRESERVE_FILES",
+    "member_removal": "DELETE_DATA_IN_SELECTED_GROUP_ONLY",
+    "template_upgrade_in_place": false,
+    "allocation_stop_free_percent": 10
+  },
+  "acceptance": {
+    "student_concurrency": 30,
+    "demo_count_per_running_environment": 1,
+    "target_profile": null,
+    "target_start_seconds": null,
+    "target_browser_latency_ms": null,
+    "windows_template_licensing_confirmed": null
+  },
+  "domain_exists": true
+}

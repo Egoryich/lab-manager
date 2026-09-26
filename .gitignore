@@ -1,0 +1,37 @@
+# Local credentials and deployment inventory
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets/
+infra/ansible/inventory.local.*
+docs/infrastructure.local.json
+
+# Python / Node / editors
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.cache/
+node_modules/
+dist/
+build/
+coverage/
+.coverage
+htmlcov/
+*.tsbuildinfo
+.idea/
+.vscode/
+
+# Runtime and test artifacts
+artifacts/
+test-results/
+playwright-report/
+*.log
+*.sqlite*
+.DS_Store
+Thumbs.db

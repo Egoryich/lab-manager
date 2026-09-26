@@ -1,0 +1,1198 @@
+{
+  "specification": "LAB_MANAGER_CODEX_SPEC.md",
+  "status": "IMPLEMENTATION_IN_PROGRESS",
+  "note": "Первая вертикаль identity/groups. PARTIAL означает проверки части раздела; полная приёмка ещё не выполнена. См. docs/implementation-status.md.",
+  "requirements": [
+    {
+      "id": "SPEC-01",
+      "section": 1,
+      "title": "Назначение системы",
+      "design_document": "docs/architecture.md",
+      "acceptance_ids": [
+        "ACC-49",
+        "ACC-53"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-02"
+      ]
+    },
+    {
+      "id": "SPEC-02",
+      "section": 2,
+      "title": "Главная пользовательская модель",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-12"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-03",
+      "section": 3,
+      "title": "Главный сценарий",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-03"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-03"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-04",
+      "section": 4,
+      "title": "Окружение",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-12",
+        "ACC-26"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-05",
+      "section": 5,
+      "title": "Жизненный цикл окружения",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-12",
+        "ACC-13",
+        "ACC-16",
+        "ACC-23"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-06",
+      "section": 6,
+      "title": "Удаление окружения",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-39",
+        "ACC-42"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-04",
+        "DEC-13"
+      ]
+    },
+    {
+      "id": "SPEC-07",
+      "section": 7,
+      "title": "EnvironmentRun",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-13",
+        "ACC-21"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-08",
+      "section": 8,
+      "title": "Права преподавателей",
+      "design_document": "docs/permissions.md",
+      "acceptance_ids": [
+        "ACC-06",
+        "ACC-07",
+        "ACC-08",
+        "ACC-11"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-07",
+        "DEC-17"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-09",
+      "section": 9,
+      "title": "EnvironmentProfile",
+      "design_document": "docs/permissions.md",
+      "acceptance_ids": [
+        "ACC-06",
+        "ACC-25"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-06"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-10",
+      "section": 10,
+      "title": "Демонстрационная машина преподавателя",
+      "design_document": "docs/permissions.md",
+      "acceptance_ids": [
+        "ACC-11",
+        "ACC-13"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-07"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-11",
+      "section": 11,
+      "title": "Сеть между студентами",
+      "design_document": "docs/networking.md",
+      "acceptance_ids": [
+        "ACC-32",
+        "ACC-33",
+        "ACC-34"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-05",
+        "DEC-06"
+      ]
+    },
+    {
+      "id": "SPEC-12",
+      "section": 12,
+      "title": "Возможные дополнительные NetworkPolicy",
+      "design_document": "docs/networking.md",
+      "acceptance_ids": [
+        "ACC-35"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-06"
+      ]
+    },
+    {
+      "id": "SPEC-13",
+      "section": 13,
+      "title": "Доступ студентов только через Apache Guacamole",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-28"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-05",
+        "DEC-16"
+      ]
+    },
+    {
+      "id": "SPEC-14",
+      "section": 14,
+      "title": "Размещение Guacamole",
+      "design_document": "docs/architecture.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-45"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-05"
+      ]
+    },
+    {
+      "id": "SPEC-15",
+      "section": 15,
+      "title": "Credentials Runtime",
+      "design_document": "docs/security.md",
+      "acceptance_ids": [
+        "ACC-30"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-16"
+      ]
+    },
+    {
+      "id": "SPEC-16",
+      "section": 16,
+      "title": "Группы",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-09",
+        "ACC-10"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-03",
+        "DEC-08"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-17",
+      "section": 17,
+      "title": "Код группы",
+      "design_document": "docs/security.md",
+      "acceptance_ids": [
+        "ACC-03",
+        "ACC-50"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-18",
+      "section": 18,
+      "title": "Поведение при появлении нового студента",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-05",
+        "ACC-20"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-19",
+      "section": 19,
+      "title": "Поведение при удалении студента из группы",
+      "design_document": "docs/permissions.md",
+      "acceptance_ids": [
+        "ACC-04",
+        "ACC-29"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-11"
+      ]
+    },
+    {
+      "id": "SPEC-20",
+      "section": 20,
+      "title": "Физический сервер",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-44",
+        "ACC-45",
+        "ACC-47"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-02"
+      ]
+    },
+    {
+      "id": "SPEC-21",
+      "section": 21,
+      "title": "Удалённое включение",
+      "design_document": "docs/architecture.md",
+      "acceptance_ids": [
+        "ACC-44",
+        "ACC-47"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-01"
+      ]
+    },
+    {
+      "id": "SPEC-22",
+      "section": 22,
+      "title": "Главный экран преподавателя",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-44",
+        "ACC-45",
+        "ACC-48"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-08"
+      ]
+    },
+    {
+      "id": "SPEC-23",
+      "section": 23,
+      "title": "Работа нескольких преподавателей",
+      "design_document": "docs/scheduling.md",
+      "acceptance_ids": [
+        "ACC-20",
+        "ACC-49"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-08",
+        "DEC-09"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-24",
+      "section": 24,
+      "title": "Resource Scheduler",
+      "design_document": "docs/scheduling.md",
+      "acceptance_ids": [
+        "ACC-08",
+        "ACC-20",
+        "ACC-24"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-09"
+      ]
+    },
+    {
+      "id": "SPEC-25",
+      "section": 25,
+      "title": "RAM policy",
+      "design_document": "docs/scheduling.md",
+      "acceptance_ids": [
+        "ACC-08",
+        "ACC-49"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-26",
+      "section": 26,
+      "title": "CPU policy",
+      "design_document": "docs/scheduling.md",
+      "acceptance_ids": [
+        "ACC-08",
+        "ACC-20"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-27",
+      "section": 27,
+      "title": "Transactional reservations",
+      "design_document": "docs/scheduling.md",
+      "acceptance_ids": [
+        "ACC-20",
+        "ACC-21",
+        "ACC-22"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-09"
+      ]
+    },
+    {
+      "id": "SPEC-28",
+      "section": 28,
+      "title": "Persistent Runtime",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-13",
+        "ACC-14"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-29",
+      "section": 29,
+      "title": "Template Versioning",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-25",
+        "ACC-26"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-14"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-30",
+      "section": 30,
+      "title": "Snapshots",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-38"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-31",
+      "section": 31,
+      "title": "Storage Monitoring",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-36"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-04",
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-32",
+      "section": 32,
+      "title": "Storage thresholds",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-37",
+        "ACC-51"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-15"
+      ]
+    },
+    {
+      "id": "SPEC-33",
+      "section": 33,
+      "title": "Storage Cleanup",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-40",
+        "ACC-41"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-34",
+      "section": 34,
+      "title": "Cleanup recommendations",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-40",
+        "ACC-43"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-35",
+      "section": 35,
+      "title": "Retention Policies",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-43"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-04",
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-36",
+      "section": 36,
+      "title": "Orphan Detection",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-41"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-37",
+      "section": 37,
+      "title": "Idle Runtime Policy",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-18",
+        "ACC-19"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-38",
+      "section": 38,
+      "title": "Завершение Environment преподавателем",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-16",
+        "ACC-17"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-39",
+      "section": 39,
+      "title": "Demonstration Runtime",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-11",
+        "ACC-27",
+        "ACC-38"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-07"
+      ]
+    },
+    {
+      "id": "SPEC-40",
+      "section": 40,
+      "title": "Apache Guacamole",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-28"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-03",
+        "DEC-10"
+      ]
+    },
+    {
+      "id": "SPEC-41",
+      "section": 41,
+      "title": "Guacamole connection lifecycle",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-19",
+        "ACC-28",
+        "ACC-29"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-10"
+      ]
+    },
+    {
+      "id": "SPEC-42",
+      "section": 42,
+      "title": "Guacamole Session Tracking",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-31"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-10"
+      ]
+    },
+    {
+      "id": "SPEC-43",
+      "section": 43,
+      "title": "Student UI",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-19",
+        "ACC-27",
+        "ACC-48"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-44",
+      "section": 44,
+      "title": "Teacher UI",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-09",
+        "ACC-16",
+        "ACC-48"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-08",
+        "DEC-09"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-45",
+      "section": 45,
+      "title": "Admin UI",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-06",
+        "ACC-36",
+        "ACC-40",
+        "ACC-48"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-46",
+      "section": 46,
+      "title": "Lab Node Agent",
+      "design_document": "docs/security.md",
+      "acceptance_ids": [
+        "ACC-22",
+        "ACC-54"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-47",
+      "section": 47,
+      "title": "Proxmox Adapter",
+      "design_document": "docs/architecture.md",
+      "acceptance_ids": [
+        "ACC-52"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-48",
+      "section": 48,
+      "title": "Power Provider",
+      "design_document": "docs/architecture.md",
+      "acceptance_ids": [
+        "ACC-44",
+        "ACC-47"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-01"
+      ]
+    },
+    {
+      "id": "SPEC-49",
+      "section": 49,
+      "title": "Access Provider",
+      "design_document": "docs/guacamole.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-52"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-50",
+      "section": 50,
+      "title": "Network Provider",
+      "design_document": "docs/networking.md",
+      "acceptance_ids": [
+        "ACC-32",
+        "ACC-33",
+        "ACC-35"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-06"
+      ]
+    },
+    {
+      "id": "SPEC-51",
+      "section": 51,
+      "title": "Domain models",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-01",
+        "ACC-12",
+        "ACC-36",
+        "ACC-41"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-03",
+        "DEC-09"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-52",
+      "section": 52,
+      "title": "Environment model",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-12",
+        "ACC-25",
+        "ACC-26"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-14"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-53",
+      "section": 53,
+      "title": "Runtime model",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-05",
+        "ACC-13",
+        "ACC-21"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-11"
+      ]
+    },
+    {
+      "id": "SPEC-54",
+      "section": 54,
+      "title": "DemoRuntime model",
+      "design_document": "docs/domain.md",
+      "acceptance_ids": [
+        "ACC-11",
+        "ACC-13"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-07"
+      ]
+    },
+    {
+      "id": "SPEC-55",
+      "section": 55,
+      "title": "TeacherPermissionPolicy",
+      "design_document": "docs/permissions.md",
+      "acceptance_ids": [
+        "ACC-07",
+        "ACC-08"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-56",
+      "section": 56,
+      "title": "REST API — группы",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-03",
+        "ACC-04",
+        "ACC-09"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-11"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-57",
+      "section": 57,
+      "title": "REST API — окружения",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-12",
+        "ACC-16",
+        "ACC-39"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [
+        "DEC-04",
+        "DEC-13",
+        "DEC-14"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-58",
+      "section": 58,
+      "title": "REST API — Runtime",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-18",
+        "ACC-27",
+        "ACC-38"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-10"
+      ]
+    },
+    {
+      "id": "SPEC-59",
+      "section": 59,
+      "title": "REST API — DemoRuntime",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-11",
+        "ACC-27",
+        "ACC-38"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-07"
+      ]
+    },
+    {
+      "id": "SPEC-60",
+      "section": 60,
+      "title": "REST API — Storage",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-36",
+        "ACC-40",
+        "ACC-42"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-13",
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-61",
+      "section": 61,
+      "title": "REST API — Teacher Permissions",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-06",
+        "ACC-07"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-62",
+      "section": 62,
+      "title": "Реальное время",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-31",
+        "ACC-48"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-63",
+      "section": 63,
+      "title": "Storage cleanup safety",
+      "design_document": "docs/storage.md",
+      "acceptance_ids": [
+        "ACC-38",
+        "ACC-40"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-11"
+      ]
+    },
+    {
+      "id": "SPEC-64",
+      "section": 64,
+      "title": "Load requirements",
+      "design_document": "docs/acceptance.md",
+      "acceptance_ids": [
+        "ACC-49",
+        "ACC-50",
+        "ACC-51"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-65",
+      "section": 65,
+      "title": "Безопасность сети",
+      "design_document": "docs/networking.md",
+      "acceptance_ids": [
+        "ACC-32",
+        "ACC-33",
+        "ACC-34"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-05"
+      ]
+    },
+    {
+      "id": "SPEC-66",
+      "section": 66,
+      "title": "Reconciliation",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-15",
+        "ACC-22",
+        "ACC-41"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-67",
+      "section": 67,
+      "title": "Server shutdown",
+      "design_document": "docs/lifecycle.md",
+      "acceptance_ids": [
+        "ACC-46",
+        "ACC-47"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12"
+      ]
+    },
+    {
+      "id": "SPEC-68",
+      "section": 68,
+      "title": "Monitoring",
+      "design_document": "docs/development.md",
+      "acceptance_ids": [
+        "ACC-24",
+        "ACC-36",
+        "ACC-45",
+        "ACC-48"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-17"
+      ]
+    },
+    {
+      "id": "SPEC-69",
+      "section": 69,
+      "title": "Alerts",
+      "design_document": "docs/development.md",
+      "acceptance_ids": [
+        "ACC-24",
+        "ACC-37",
+        "ACC-45",
+        "ACC-48"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": []
+    },
+    {
+      "id": "SPEC-70",
+      "section": 70,
+      "title": "Audit",
+      "design_document": "docs/security.md",
+      "acceptance_ids": [
+        "ACC-30",
+        "ACC-48"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-71",
+      "section": 71,
+      "title": "Стек",
+      "design_document": "docs/development.md",
+      "acceptance_ids": [],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "build_gate_ids": [
+        "BUILD-01"
+      ],
+      "amended_by": [
+        "DEC-02"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-72",
+      "section": 72,
+      "title": "Repository",
+      "design_document": "docs/implementation-plan.md",
+      "acceptance_ids": [],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "build_gate_ids": [
+        "BUILD-02",
+        "BUILD-03"
+      ],
+      "amended_by": [
+        "DEC-02"
+      ],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-73",
+      "section": 73,
+      "title": "Правила разработки",
+      "design_document": "docs/security.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-30",
+        "ACC-40",
+        "ACC-54"
+      ],
+      "implementation_status": "IN_PROGRESS",
+      "verification_status": "PARTIAL",
+      "amended_by": [],
+      "evidence_document": "docs/implementation-status.md"
+    },
+    {
+      "id": "SPEC-74",
+      "section": 74,
+      "title": "Ключевые acceptance criteria",
+      "design_document": "docs/acceptance.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-03",
+        "ACC-06",
+        "ACC-08",
+        "ACC-11",
+        "ACC-12",
+        "ACC-13",
+        "ACC-20",
+        "ACC-27",
+        "ACC-28",
+        "ACC-32",
+        "ACC-33",
+        "ACC-34",
+        "ACC-36",
+        "ACC-37",
+        "ACC-39",
+        "ACC-40",
+        "ACC-43"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-07",
+        "DEC-12",
+        "DEC-15"
+      ]
+    },
+    {
+      "id": "SPEC-75",
+      "section": 75,
+      "title": "Основной пользовательский сценарий итогового продукта",
+      "design_document": "docs/acceptance.md",
+      "acceptance_ids": [
+        "ACC-02",
+        "ACC-12",
+        "ACC-13",
+        "ACC-39"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-12",
+        "DEC-13"
+      ]
+    },
+    {
+      "id": "SPEC-76",
+      "section": 76,
+      "title": "Основной принцип",
+      "design_document": "docs/api.md",
+      "acceptance_ids": [
+        "ACC-27",
+        "ACC-30",
+        "ACC-48"
+      ],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN",
+      "amended_by": [
+        "DEC-05",
+        "DEC-16"
+      ]
+    }
+  ],
+  "effective_basis": [
+    "LAB_MANAGER_CODEX_SPEC.md",
+    "docs/decisions.md"
+  ]
+}

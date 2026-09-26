@@ -1,0 +1,1 @@
+{"name":"@lab/client-sdk","version":"0.1.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@lab/shared-types":"*","openapi-fetch":"^0.14.0"}}
