@@ -1,0 +1,11 @@
+[Unit]
+Description=Check verified Lab Manager releases every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+Unit=lab-manager-update.service
+
+[Install]
+WantedBy=timers.target

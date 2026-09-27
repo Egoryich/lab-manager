@@ -1,9 +1,11 @@
 """Exercise release images in a disposable, uniquely named Compose project."""
 
 import argparse
+import importlib.util
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -107,8 +109,54 @@ def main():
             compose("restart", "api")
             compose("up", "-d", "--wait", "--wait-timeout", "120", "api")
             assert request("/api/auth/me", headers=authenticated)[0] == 200
+            # Exercise the actual updater against only this disposable Compose project.
+            spec = importlib.util.spec_from_file_location("updater", root / "tools/update-vps.py")
+            updater_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(updater_module)
+            update_root = Path(directory) / "updater"
+            (update_root / "repo/infra/vps").mkdir(parents=True)
+            shutil.copyfile(
+                root / "infra/vps/compose.yml", update_root / "repo/infra/vps/compose.yml"
+            )
+            shutil.copyfile(env_file, update_root / "repo/.env.vps")
+            update = updater_module.Updater(update_root, project=project)
+            update.ready = lambda: updater_module.Updater.ready(update, public=False)
+            image_ids = {s: update.running_image(s) for s in ("api", "web")}
+            state = {
+                "active_sha": "a" * 40,
+                "failed_sha": None,
+                "compose_hash": updater_module.content_hash(update.compose_file),
+                "env_hash": updater_module.content_hash(update.env),
+                "schema_revision": update.schema(),
+                "images": image_ids,
+            }
+            update.save_state(state)
+            update.apply(
+                "b" * 40, state, update.env.read_text(), image_ids["api"], image_ids["web"]
+            )
+            state = json.loads(update.state_file.read_text())
+            assert state["active_sha"] == "b" * 40
+            try:
+                update.apply(
+                    "c" * 40,
+                    state,
+                    update.env.read_text(),
+                    "lab-manager-missing-image:smoke",
+                    image_ids["web"],
+                )
+            except RuntimeError as error:
+                assert "previous release restored" in str(error)
+            else:
+                raise AssertionError("Missing release image must fail")
+            assert json.loads(update.state_file.read_text())["failed_sha"] == "c" * 40
+            assert update.running_image("api") == image_ids["api"]
+            assert update.schema() == "0002_catalog"
+            assert request("/api/auth/me", headers=authenticated)[0] == 200
             compose("ps")
-            print("PASS: release images, migrations, SPA, origin, secure cookie, roles, restart")
+            print(
+                "PASS: release images, migrations, SPA, secure cookie, roles, "
+                "restart, update/rollback"
+            )
         finally:
             # Only this randomly named disposable project and its test volume are removed.
             compose("down", "--volumes", "--remove-orphans")

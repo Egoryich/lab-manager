@@ -1,0 +1,16 @@
+[Unit]
+Description=Update verified Lab Manager VPS application images
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/lab-manager/update-vps.py
+TimeoutStartSec=15min
+UMask=0077
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=PYTHONDONTWRITEBYTECODE=1
+Nice=10
+StandardOutput=journal
+StandardError=journal
