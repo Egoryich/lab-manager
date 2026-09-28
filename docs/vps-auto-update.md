@@ -51,6 +51,8 @@ curl --fail "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}/api/health/ready"
 
 ## Эксплуатация
 
+Подтверждено пользователем 28.09.2026 на VPS: установка исправленного updater из файла завершилась успешно; timer активен и имеет следующую дату запуска. Первый запуск установил выпуск `7e14b6b368bef2e306bb4e447cadae14090825d9`. В journal последовательно появились `Verified compatible release`, `Updated application to`, `Deactivated successfully` и `Finished`. Длительность запуска — около 22 секунд, peak memory service — 88.2M по systemd; это наблюдение одного обновления, не общий ресурсный бюджет приложения. Команды установки выше и проверки timer/journal подтверждены этим результатом. Hostname из вывода в гайд не переносится.
+
 ```bash
 # Проверка кандидата без замены контейнеров. При первом запуске сохраняет baseline.
 sudo python3 /usr/local/lib/lab-manager/update-vps.py --check
