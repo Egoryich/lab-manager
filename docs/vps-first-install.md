@@ -10,7 +10,7 @@
 
 ## Получить конкретную проверенную версию
 
-Подставьте полный SHA **успешного** workflow вместо `VERIFIED_COMMIT_SHA`. Для первого запуска:
+Задайте `LAB_DOMAIN` своим hostname (см. [единый гайд](deployment-guide.md)). Подставьте полный SHA **успешного** workflow вместо `VERIFIED_COMMIT_SHA`. Для первого запуска:
 
 ```bash
 sudo apt install -y git python3
@@ -18,7 +18,7 @@ sudo install -d -m 0755 /opt/lab-manager
 sudo git clone --branch dev-vps https://github.com/Egoryich/lab-manager.git /opt/lab-manager/repo
 cd /opt/lab-manager/repo
 sudo git checkout --detach VERIFIED_COMMIT_SHA
-sudo python3 tools/init-vps.py --origin https://lab.qround.website --revision VERIFIED_COMMIT_SHA
+sudo python3 tools/init-vps.py --origin "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}" --revision VERIFIED_COMMIT_SHA
 ```
 
 Генератор создаёт `.env.vps` с правами 0600 и случайными секретами. Повторный запуск не перезаписывает файл. Его нужно сохранять при обновлениях: смена encryption/digest keys нарушит доступ к ранее зашифрованным данным и сессиям. Файл исключён из Git. Не присылайте его содержимое или полный вывод `docker compose config`.
@@ -57,10 +57,10 @@ sudo cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-lab.$(date +%Y%m%d%
 sudo nano /etc/caddy/Caddyfile
 ```
 
-Добавьте **в конец**, сохранив блоки `:80` и `qround.website`:
+Добавьте **в конец**, сохранив блоки `:80` и существующего Headscale. Замените `lab.example.org` своим hostname; Caddyfile не подставляет shell-переменные автоматически:
 
 ```caddyfile
-lab.qround.website {
+lab.example.org {
     encode zstd gzip
     @api path /api /api/*
     handle @api {
@@ -77,7 +77,7 @@ lab.qround.website {
 
 ```bash
 sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy
-curl --fail https://lab.qround.website/api/health/ready
+curl --fail "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}/api/health/ready"
 systemctl is-active caddy headscale tailscaled
 dc ps
 sudo docker stats --no-stream

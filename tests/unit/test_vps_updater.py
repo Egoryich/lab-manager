@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +13,23 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 OLD = "a" * 40
 NEW = "b" * 40
+
+
+def test_child_commands_cannot_consume_remaining_installer_input():
+    path = Path(__file__).resolve().parents[2] / "tools/update-vps.py"
+    program = f"""import importlib.util,sys
+spec=importlib.util.spec_from_file_location("u", {str(path)!r})
+u=importlib.util.module_from_spec(spec);spec.loader.exec_module(u)
+assert u.run(sys.executable,"-c","import sys; print(sys.stdin.read())") == ""
+assert sys.stdin.read() == "INSTALL_TIMER_NEXT\\n"
+"""
+    subprocess.run(
+        [sys.executable, "-c", program],
+        input="INSTALL_TIMER_NEXT\n",
+        text=True,
+        capture_output=True,
+        check=True,
+    )
 
 
 def test_digest_is_bound_to_this_pull_not_an_older_tag():

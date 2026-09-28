@@ -1,6 +1,6 @@
 # Автообновление VPS без SSH из GitHub
 
-На VPS работает systemd timer: через две минуты после загрузки и затем примерно каждые пять минут запускается проверка. GitHub не подключается к серверу. Updater использует исходящие HTTPS-запросы к публичному репозиторию и GHCR; отдельные токены не нужны, если оба пакета доступны публично.
+После установки и включения на VPS работает systemd timer: через две минуты после загрузки и затем примерно каждые пять минут запускается проверка. GitHub не подключается к серверу. Updater использует исходящие HTTPS-запросы к публичному репозиторию и GHCR; отдельные токены не нужны, если оба пакета доступны публично.
 
 ## Что обновляется автоматически
 
@@ -27,7 +27,12 @@
 ```bash
 cd /opt/lab-manager/repo
 sudo git fetch origin dev-vps
-sudo git show VERIFIED_UPDATER_SHA:tools/install-vps-updater.sh | sudo bash -s -- VERIFIED_UPDATER_SHA
+# Сохранить проверенный установщик в файл, а не передавать shell через pipe.
+installer=$(mktemp)
+if sudo git show VERIFIED_UPDATER_SHA:tools/install-vps-updater.sh > "$installer"; then
+    sudo bash "$installer" VERIFIED_UPDATER_SHA
+fi
+rm -f "$installer"
 ```
 
 Установщик копирует updater и systemd units из заданного коммита, проверяет исходное состояние, включает timer и выполняет первую проверку/обновление. Секреты не переписываются новыми значениями. Updater установлен отдельно в `/usr/local/lib/lab-manager/update-vps.py` и не заменяет сам себя автоматически.
@@ -35,10 +40,14 @@ sudo git show VERIFIED_UPDATER_SHA:tools/install-vps-updater.sh | sudo bash -s -
 ```bash
 systemctl list-timers lab-manager-update.timer --no-pager
 sudo journalctl -u lab-manager-update.service -n 30 --no-pager
-curl --fail https://lab.qround.website/api/health/ready
+curl --fail "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}/api/health/ready"
 ```
 
 Сервис имеет тип oneshot, поэтому `inactive (dead)` после успешного выполнения нормален; результат смотрите через `systemctl show lab-manager-update.service -p Result -p ExecMainStatus`. Timer должен быть активен.
+
+## Если после установки нет timer и журнал пуст
+
+В первом установщике запуск через `git show … | bash` мог прерваться после `Verified compatible release`: неинтерактивный дочерний Docker-процесс наследовал stdin и забирал оставшиеся команды shell. Исправлено закрытием stdin дочерних процессов и запуском установщика из файла. Проверка `Verified compatible release` сама по себе не подтверждает установку timer. Повторите установку исправленной версии, сохранив checkout и `.env.vps`; приложение и данные переустанавливать не нужно. Общая диагностика: [единый гайд](deployment-guide.md).
 
 ## Эксплуатация
 

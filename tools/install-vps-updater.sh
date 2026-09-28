@@ -27,7 +27,7 @@ install -d -o root -g root -m 0755 /usr/local/lib/lab-manager
 install -o root -g root -m 0644 "$stage/update-vps.py" /usr/local/lib/lab-manager/update-vps.py
 # Bootstrap verifies that the checkout, env and healthy running containers agree.
 # Do not checkout the new release before this step on the first installation.
-python3 /usr/local/lib/lab-manager/update-vps.py --check
+python3 /usr/local/lib/lab-manager/update-vps.py --check </dev/null
 install -o root -g root -m 0644 "$stage/lab-manager-update.service" /etc/systemd/system/lab-manager-update.service
 install -o root -g root -m 0644 "$stage/lab-manager-update.timer" /etc/systemd/system/lab-manager-update.timer
 systemctl daemon-reload

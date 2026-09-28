@@ -25,7 +25,13 @@ def run(*args, cwd=None):
         if not key.startswith(("LAB_", "COMPOSE_")) and key != "POSTGRES_PASSWORD"
     }
     result = subprocess.run(
-        args, cwd=cwd, env=environment, capture_output=True, text=True, timeout=480
+        args,
+        cwd=cwd,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=480,
     )
     if result.returncode:
         # Compose errors can contain interpolated environment values; do not journal them.
