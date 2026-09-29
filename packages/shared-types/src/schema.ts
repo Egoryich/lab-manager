@@ -530,6 +530,8 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+            student_resources?: components["schemas"]["MachineSizing"] | null;
+            demo_resources?: components["schemas"]["MachineSizing"] | null;
         };
         /** EnvironmentView */
         EnvironmentView: {
@@ -555,6 +557,18 @@ export interface components {
              * Format: uuid
              */
             demo_profile_version_id: string;
+            /** Student Memory Mib */
+            student_memory_mib: number;
+            /** Student Vcpu */
+            student_vcpu: number;
+            /** Student Disk Gib */
+            student_disk_gib: number;
+            /** Demo Memory Mib */
+            demo_memory_mib: number;
+            /** Demo Vcpu */
+            demo_vcpu: number;
+            /** Demo Disk Gib */
+            demo_disk_gib: number;
             /** Version */
             version: number;
             /**
@@ -670,6 +684,15 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** MachineSizing */
+        MachineSizing: {
+            /** Memory Mib */
+            memory_mib: number;
+            /** Vcpu */
+            vcpu: number;
+            /** Disk Gib */
+            disk_gib: number;
         };
         /** NodeView */
         NodeView: {
@@ -790,9 +813,21 @@ export interface components {
             /** Vcpu */
             vcpu: number;
             /** Cpu Millicredits */
-            cpu_millicredits: number;
+            cpu_millicredits?: number | null;
             /** Disk Gib */
             disk_gib: number;
+            /** Min Memory Mib */
+            min_memory_mib?: number | null;
+            /** Max Memory Mib */
+            max_memory_mib?: number | null;
+            /** Min Vcpu */
+            min_vcpu?: number | null;
+            /** Max Vcpu */
+            max_vcpu?: number | null;
+            /** Min Disk Gib */
+            min_disk_gib?: number | null;
+            /** Max Disk Gib */
+            max_disk_gib?: number | null;
             /**
              * Network Mode
              * @enum {string}
@@ -818,6 +853,18 @@ export interface components {
             cpu_millicredits: number;
             /** Disk Gib */
             disk_gib: number;
+            /** Min Memory Mib */
+            min_memory_mib: number;
+            /** Max Memory Mib */
+            max_memory_mib: number;
+            /** Min Vcpu */
+            min_vcpu: number;
+            /** Max Vcpu */
+            max_vcpu: number;
+            /** Min Disk Gib */
+            min_disk_gib: number;
+            /** Max Disk Gib */
+            max_disk_gib: number;
             /**
              * Network Mode
              * @enum {string}

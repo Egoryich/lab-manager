@@ -42,6 +42,14 @@ class ProfileVersion(Base):
             "memory_mib > 0 AND vcpu > 0 AND cpu_millicredits > 0 AND disk_gib > 0",
             name="resources",
         ),
+        CheckConstraint(
+            "min_memory_mib >= 128 AND min_memory_mib <= memory_mib "
+            "AND memory_mib <= max_memory_mib "
+            "AND min_vcpu >= 1 AND min_vcpu <= vcpu AND vcpu <= max_vcpu "
+            "AND min_disk_gib >= 1 AND min_disk_gib <= disk_gib "
+            "AND disk_gib <= max_disk_gib",
+            name="resource_range",
+        ),
         CheckConstraint("network_mode IN ('ISOLATED','GROUP_LAN')", name="network"),
     )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -51,6 +59,12 @@ class ProfileVersion(Base):
     vcpu: Mapped[int] = mapped_column(Integer)
     cpu_millicredits: Mapped[int] = mapped_column(Integer)
     disk_gib: Mapped[int] = mapped_column(Integer)
+    min_memory_mib: Mapped[int] = mapped_column(Integer)
+    max_memory_mib: Mapped[int] = mapped_column(Integer)
+    min_vcpu: Mapped[int] = mapped_column(Integer)
+    max_vcpu: Mapped[int] = mapped_column(Integer)
+    min_disk_gib: Mapped[int] = mapped_column(Integer)
+    max_disk_gib: Mapped[int] = mapped_column(Integer)
     network_mode: Mapped[str] = mapped_column(String(16))
     internet_enabled: Mapped[bool] = mapped_column(Boolean)
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
@@ -103,13 +117,26 @@ class TeacherPolicyAssignment(Base):
 
 class Environment(Base):
     __tablename__ = "environments"
-    __table_args__ = (UniqueConstraint("owner_teacher_id", "request_id"),)
+    __table_args__ = (
+        UniqueConstraint("owner_teacher_id", "request_id"),
+        CheckConstraint(
+            "student_memory_mib >= 128 AND student_vcpu >= 1 AND student_disk_gib >= 1 "
+            "AND demo_memory_mib >= 128 AND demo_vcpu >= 1 AND demo_disk_gib >= 1",
+            name="selected_resources",
+        ),
+    )
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     group_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("groups.id"), index=True)
     owner_teacher_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
     profile_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("profile_versions.id"))
     demo_profile_version_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("profile_versions.id"))
+    student_memory_mib: Mapped[int] = mapped_column(Integer)
+    student_vcpu: Mapped[int] = mapped_column(Integer)
+    student_disk_gib: Mapped[int] = mapped_column(Integer)
+    demo_memory_mib: Mapped[int] = mapped_column(Integer)
+    demo_vcpu: Mapped[int] = mapped_column(Integer)
+    demo_disk_gib: Mapped[int] = mapped_column(Integer)
     permission_revision_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("permission_policy_revisions.id")
     )

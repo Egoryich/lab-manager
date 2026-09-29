@@ -196,7 +196,7 @@ def main():
             assert json.loads(update.state_file.read_text())["failed_sha"] == "c" * 40
             assert update.running_image("api") == image_ids["api"]
             assert update.running_image("worker") == image_ids["worker"]
-            assert update.schema() == "0004_nodes"
+            assert update.schema() == "0005_sizing"
             assert request("/api/auth/me", headers=authenticated)[0] == 200
             compose("ps")
             print(

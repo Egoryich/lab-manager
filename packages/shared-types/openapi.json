@@ -3857,6 +3857,26 @@
             "type": "string",
             "format": "uuid",
             "title": "Request Id"
+          },
+          "student_resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineSizing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "demo_resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineSizing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3896,6 +3916,30 @@
             "format": "uuid",
             "title": "Demo Profile Version Id"
           },
+          "student_memory_mib": {
+            "type": "integer",
+            "title": "Student Memory Mib"
+          },
+          "student_vcpu": {
+            "type": "integer",
+            "title": "Student Vcpu"
+          },
+          "student_disk_gib": {
+            "type": "integer",
+            "title": "Student Disk Gib"
+          },
+          "demo_memory_mib": {
+            "type": "integer",
+            "title": "Demo Memory Mib"
+          },
+          "demo_vcpu": {
+            "type": "integer",
+            "title": "Demo Vcpu"
+          },
+          "demo_disk_gib": {
+            "type": "integer",
+            "title": "Demo Disk Gib"
+          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -3914,6 +3958,12 @@
           "group_id",
           "profile_version_id",
           "demo_profile_version_id",
+          "student_memory_mib",
+          "student_vcpu",
+          "student_disk_gib",
+          "demo_memory_mib",
+          "demo_vcpu",
+          "demo_disk_gib",
           "version"
         ],
         "title": "EnvironmentView"
@@ -4210,6 +4260,36 @@
           "password"
         ],
         "title": "Login"
+      },
+      "MachineSizing": {
+        "properties": {
+          "memory_mib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 128.0,
+            "title": "Memory Mib"
+          },
+          "vcpu": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Vcpu"
+          },
+          "disk_gib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 1.0,
+            "title": "Disk Gib"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "memory_mib",
+          "vcpu",
+          "disk_gib"
+        ],
+        "title": "MachineSizing"
       },
       "NodeView": {
         "properties": {
@@ -4607,9 +4687,16 @@
             "title": "Vcpu"
           },
           "cpu_millicredits": {
-            "type": "integer",
-            "maximum": 128000.0,
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Cpu Millicredits"
           },
           "disk_gib": {
@@ -4617,6 +4704,84 @@
             "maximum": 1048576.0,
             "minimum": 1.0,
             "title": "Disk Gib"
+          },
+          "min_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Memory Mib"
+          },
+          "max_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Memory Mib"
+          },
+          "min_vcpu": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Vcpu"
+          },
+          "max_vcpu": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Vcpu"
+          },
+          "min_disk_gib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Disk Gib"
+          },
+          "max_disk_gib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Disk Gib"
           },
           "network_mode": {
             "type": "string",
@@ -4638,7 +4803,6 @@
           "template_version_id",
           "memory_mib",
           "vcpu",
-          "cpu_millicredits",
           "disk_gib",
           "network_mode",
           "internet_enabled"
@@ -4672,8 +4836,6 @@
           },
           "cpu_millicredits": {
             "type": "integer",
-            "maximum": 128000.0,
-            "minimum": 1.0,
             "title": "Cpu Millicredits"
           },
           "disk_gib": {
@@ -4681,6 +4843,30 @@
             "maximum": 1048576.0,
             "minimum": 1.0,
             "title": "Disk Gib"
+          },
+          "min_memory_mib": {
+            "type": "integer",
+            "title": "Min Memory Mib"
+          },
+          "max_memory_mib": {
+            "type": "integer",
+            "title": "Max Memory Mib"
+          },
+          "min_vcpu": {
+            "type": "integer",
+            "title": "Min Vcpu"
+          },
+          "max_vcpu": {
+            "type": "integer",
+            "title": "Max Vcpu"
+          },
+          "min_disk_gib": {
+            "type": "integer",
+            "title": "Min Disk Gib"
+          },
+          "max_disk_gib": {
+            "type": "integer",
+            "title": "Max Disk Gib"
           },
           "network_mode": {
             "type": "string",
@@ -4735,6 +4921,12 @@
           "vcpu",
           "cpu_millicredits",
           "disk_gib",
+          "min_memory_mib",
+          "max_memory_mib",
+          "min_vcpu",
+          "max_vcpu",
+          "min_disk_gib",
+          "max_disk_gib",
           "network_mode",
           "internet_enabled",
           "id",

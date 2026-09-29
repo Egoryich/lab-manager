@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from lab_manager.catalog import configuration, estimate
 from lab_manager.catalog_models import Environment
-from lab_manager.catalog_schemas import EnvironmentCreate
+from lab_manager.catalog_schemas import EnvironmentCreate, MachineSizing
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.models import User, UserRole
@@ -175,8 +175,18 @@ async def validate_environment(db, claim):
         profile_version_id=environment.profile_version_id,
         demo_profile_version_id=environment.demo_profile_version_id,
         request_id=environment.request_id,
+        student_resources=MachineSizing(
+            memory_mib=environment.student_memory_mib,
+            vcpu=environment.student_vcpu,
+            disk_gib=environment.student_disk_gib,
+        ),
+        demo_resources=MachineSizing(
+            memory_mib=environment.demo_memory_mib,
+            vcpu=environment.demo_vcpu,
+            disk_gib=environment.demo_disk_gib,
+        ),
     )
-    group, policy, selected = await configuration(
+    group, policy, selected, student_choice, demo_choice = await configuration(
         db, WorkerActor(claim.actor_id, roles), body, lock=True
     )
     # Environment updates must follow User -> Group -> Environment too.
@@ -186,7 +196,7 @@ async def validate_environment(db, claim):
         or environment.owner_teacher_id != claim.actor_id
     ):
         raise Problem(409, "VERSION_CONFLICT", "Окружение изменилось.")
-    result = await estimate(db, group, *selected, policy)
+    result = await estimate(db, group, *selected, policy, student_choice, demo_choice)
     return ValidationResult(
         checked_at=await db.scalar(select(func.clock_timestamp())),
         environment_version=environment.version,
@@ -245,8 +255,8 @@ async def run(once=False):
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-            if revision != "0004_nodes":
-                raise RuntimeError("Worker requires migration 0004_nodes")
+            if revision != "0005_sizing":
+                raise RuntimeError("Worker requires migration 0005_sizing")
         endpoints = load_endpoints(settings.node_config or None)
         if endpoints and not once:
             poller = asyncio.create_task(poll_forever(sessions, endpoints, stop))

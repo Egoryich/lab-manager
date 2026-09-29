@@ -21,6 +21,7 @@ from lab_manager.catalog_schemas import (
     EnvironmentView,
     EstimateView,
     LimitKey,
+    MachineSizing,
     PermissionKey,
     PolicyAssign,
     PolicyCreate,
@@ -250,27 +251,45 @@ async def assign_policy(
     return await effective_policy(db, teacher_id)
 
 
-def resources(profile, template, count):
+def selected_resources(profile, requested):
+    choice = requested or MachineSizing(
+        memory_mib=profile.memory_mib, vcpu=profile.vcpu, disk_gib=profile.disk_gib
+    )
+    if any(
+        not getattr(profile, f"min_{field}")
+        <= getattr(choice, field)
+        <= getattr(profile, f"max_{field}")
+        for field in MachineSizing.model_fields
+    ):
+        raise Problem(422, "PROFILE_RESOURCE_RANGE", "Размеры машины вне границ профиля.")
+    return choice
+
+
+def resources(profile, template, count, choice):
     return ResourceTotal(
         machines=count,
-        memory_mib=profile.memory_mib * count,
-        vcpu=profile.vcpu * count,
-        cpu_millicredits=profile.cpu_millicredits * count,
-        disk_bytes=profile.disk_gib * 2**30 * count,
-        hibernation_bytes=profile.memory_mib * 2**20 * count
+        memory_mib=choice.memory_mib * count,
+        vcpu=choice.vcpu * count,
+        cpu_millicredits=(profile.cpu_millicredits * choice.vcpu + profile.vcpu - 1)
+        // profile.vcpu
+        * count,
+        disk_bytes=choice.disk_gib * 2**30 * count,
+        hibernation_bytes=choice.memory_mib * 2**20 * count
         if template.runtime_kind == "QEMU"
         else 0,
     )
 
 
-async def estimate(db, group, profile, template, demo_profile, demo_template, policy):
+async def estimate(
+    db, group, profile, template, demo_profile, demo_template, policy, student_choice, demo_choice
+):
     count = await db.scalar(
         select(func.count())
         .select_from(GroupMember)
         .where(GroupMember.group_id == group.id, GroupMember.status == "ACTIVE")
     )
-    students = resources(profile, template, count)
-    demo = resources(demo_profile, demo_template, 1)
+    students = resources(profile, template, count, student_choice)
+    demo = resources(demo_profile, demo_template, 1, demo_choice)
     total = ResourceTotal(
         **{key: getattr(students, key) + getattr(demo, key) for key in ResourceTotal.model_fields}
     )
@@ -327,30 +346,43 @@ async def configuration(db, actor, body, *, lock=False):
                 403, "PROFILE_FORBIDDEN", "Профиль или его сетевые настройки не разрешены."
             )
         selected.extend([profile, template])
-    return group, policy, selected
+    student_choice = selected_resources(selected[0], body.student_resources)
+    demo_choice = selected_resources(selected[2], body.demo_resources)
+    return group, policy, selected, student_choice, demo_choice
 
 
 @router.post("/environments/estimate", response_model=EstimateView)
 async def estimate_environment(body: EnvironmentCreate, actor: Actor, db: DB):
-    group, policy, selected = await configuration(db, actor, body)
-    return await estimate(db, group, *selected, policy)
+    group, policy, selected, student_choice, demo_choice = await configuration(db, actor, body)
+    return await estimate(db, group, *selected, policy, student_choice, demo_choice)
 
 
 @router.post("/environments", response_model=EnvironmentView, status_code=201)
 async def create_environment(body: EnvironmentCreate, actor: Actor, db: DB, request: Request):
-    group, policy, selected = await configuration(db, actor, body, lock=True)
+    group, policy, selected, student_choice, demo_choice = await configuration(
+        db, actor, body, lock=True
+    )
+    values = {
+        "name": body.name,
+        "group_id": body.group_id,
+        "profile_version_id": body.profile_version_id,
+        "demo_profile_version_id": body.demo_profile_version_id,
+        "request_id": body.request_id,
+        **{f"student_{key}": getattr(student_choice, key) for key in MachineSizing.model_fields},
+        **{f"demo_{key}": getattr(demo_choice, key) for key in MachineSizing.model_fields},
+    }
     previous = await db.scalar(
         select(Environment).where(
             Environment.owner_teacher_id == actor.id, Environment.request_id == body.request_id
         )
     )
     if previous:
-        if any(getattr(previous, key) != value for key, value in body.model_dump().items()):
+        if any(getattr(previous, key) != value for key, value in values.items()):
             raise Problem(
                 409, "IDEMPOTENCY_CONFLICT", "Этот запрос уже использован для другой конфигурации."
             )
         return previous
-    result = await estimate(db, group, *selected, policy)
+    result = await estimate(db, group, *selected, policy, student_choice, demo_choice)
     if not result.within_per_environment_limits:
         raise Problem(
             409,
@@ -358,7 +390,7 @@ async def create_environment(body: EnvironmentCreate, actor: Actor, db: DB, requ
             "Окружение превышает разрешённые лимиты: " + ", ".join(result.violations),
         )
     environment = Environment(
-        **body.model_dump(), owner_teacher_id=actor.id, permission_revision_id=policy.revision_id
+        **values, owner_teacher_id=actor.id, permission_revision_id=policy.revision_id
     )
     db.add(environment)
     await db.flush()

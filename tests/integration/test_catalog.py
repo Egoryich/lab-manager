@@ -3,6 +3,7 @@ import uuid
 
 import pytest
 from lab_manager.catalog_models import Environment
+from lab_manager.worker import claim_next, execute_claim
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 
@@ -192,3 +193,95 @@ async def test_quota_network_policy_and_assignment_version(client_factory, seed,
                 "/api/environments/estimate", json=body | {"profile_version_id": shared["id"]}
             )
         ).status_code == 403
+
+
+async def test_bounded_sizing_is_pinned_and_idempotent(app, client_factory, seed, session):
+    owner = await seed("TEACHER")
+    async with client_factory() as admin, client_factory() as teacher:
+        await session(admin, await seed("ADMIN"))
+        await session(teacher, owner)
+        profiles, _ = await catalog_setup(admin, owner.id)
+        fixed = next(p for p in (await admin.get("/api/profiles")).json() if p["id"] == profiles[0])
+        assert fixed["min_memory_mib"] == fixed["max_memory_mib"] == fixed["memory_mib"]
+        flexible = await admin.post(
+            "/api/admin/profile-versions",
+            json={
+                "name": "Flexible LXC",
+                "template_version_id": fixed["template_version_id"],
+                "memory_mib": 512,
+                "vcpu": 1,
+                "disk_gib": 10,
+                "min_memory_mib": 256,
+                "max_memory_mib": 1024,
+                "max_vcpu": 2,
+                "min_disk_gib": 5,
+                "max_disk_gib": 20,
+                "network_mode": "ISOLATED",
+                "internet_enabled": False,
+            },
+        )
+        assert flexible.status_code == 201, flexible.text
+        assert flexible.json()["cpu_millicredits"] == 1000
+        invalid_profile = await admin.post(
+            "/api/admin/profile-versions",
+            json={
+                "name": "Invalid",
+                "template_version_id": fixed["template_version_id"],
+                "memory_mib": 512,
+                "min_memory_mib": 768,
+                "vcpu": 1,
+                "disk_gib": 10,
+                "network_mode": "ISOLATED",
+                "internet_enabled": False,
+            },
+        )
+        assert invalid_profile.status_code == 422
+        group = (await teacher.post("/api/groups", json={"name": "Flexible"})).json()
+        for _ in range(2):
+            async with client_factory() as learner:
+                await session(learner, await seed())
+                assert (
+                    await learner.post(
+                        "/api/groups/join", json={"code": group["join_code"], "confirm": True}
+                    )
+                ).status_code == 200
+        body = {
+            "name": "Reduced lab",
+            "group_id": group["id"],
+            "profile_version_id": flexible.json()["id"],
+            "demo_profile_version_id": profiles[1],
+            "request_id": str(uuid.uuid4()),
+            "student_resources": {"memory_mib": 256, "vcpu": 2, "disk_gib": 5},
+            "demo_resources": {"memory_mib": 2048, "vcpu": 1, "disk_gib": 10},
+        }
+        estimate = await teacher.post("/api/environments/estimate", json=body)
+        assert estimate.status_code == 200, estimate.text
+        assert estimate.json()["total"]["memory_mib"] == 2560
+        assert estimate.json()["total"]["cpu_millicredits"] == 4500
+        assert estimate.json()["total"]["disk_bytes"] == 20 * 2**30
+        assert estimate.json()["total"]["hibernation_bytes"] == 2 * 2**30
+        assert estimate.json()["admission_status"] == "NOT_CHECKED"
+        created = await teacher.post("/api/environments", json=body)
+        assert created.status_code == 201, created.text
+        assert created.json()["student_memory_mib"] == 256
+        assert created.json()["student_vcpu"] == 2
+        assert created.json()["student_disk_gib"] == 5
+        queued = await teacher.post(
+            f"/api/environments/{created.json()['id']}/validate",
+            json={"expected_version": created.json()["version"], "request_id": str(uuid.uuid4())},
+        )
+        assert queued.status_code == 202, queued.text
+        claim = await claim_next(app.state.sessions, uuid.uuid4())
+        await execute_claim(app.state.sessions, claim)
+        completed = await teacher.get(f"/api/operations/{queued.json()['id']}")
+        assert completed.json()["state"] == "SUCCEEDED"
+        assert completed.json()["result"]["estimate"]["total"]["memory_mib"] == 2560
+        assert (await teacher.post("/api/environments", json=body)).json()["id"] == created.json()[
+            "id"
+        ]
+        changed = body | {"student_resources": {"memory_mib": 512, "vcpu": 2, "disk_gib": 5}}
+        assert (await teacher.post("/api/environments", json=changed)).status_code == 409
+        outside = body | {"student_resources": {"memory_mib": 128, "vcpu": 2, "disk_gib": 5}}
+        response = await teacher.post("/api/environments/estimate", json=outside)
+        assert response.status_code == 422
+        assert response.json()["code"] == "PROFILE_RESOURCE_RANGE"
