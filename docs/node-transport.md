@@ -182,7 +182,7 @@ docker compose --env-file .env.vps -f infra/vps/compose.yml \
 
 ### VPS updater снова работает
 
-30.09.2026 пользователь выполнил `python3 tools/update-vps.py --adopt </dev/null` и `bash tools/install-vps-updater.sh "$release" </dev/null`. Вывод подтвердил `Adopted manually verified running release`, затем `Already current` для установленного полного SHA. `lab-manager-update.timer` включён и назначил следующий запуск; `systemctl show --no-pager` вернул `Result=success`, `ExecMainStatus=0`. Исторические ошибки `Release changes schema or Compose; manual deployment required` в той же выборке journal относятся к попыткам до ручной миграции; последняя запись — успешная проверка текущего выпуска. Отдельный публичный `curl --fail --silent --show-error --max-time 15` вернул `{"status":"ready"}`. Админский экран ещё проверяется отдельно. Успешный порядок без реального SHA:
+30.09.2026 пользователь выполнил `python3 tools/update-vps.py --adopt </dev/null` и `bash tools/install-vps-updater.sh "$release" </dev/null`. Вывод подтвердил `Adopted manually verified running release`, затем `Already current` для установленного полного SHA. `lab-manager-update.timer` включён и назначил следующий запуск; `systemctl show --no-pager` вернул `Result=success`, `ExecMainStatus=0`. Исторические ошибки `Release changes schema or Compose; manual deployment required` в той же выборке journal относятся к попыткам до ручной миграции; последняя запись — успешная проверка текущего выпуска. Отдельный публичный `curl --fail --silent --show-error --max-time 15` вернул `{"status":"ready"}`. Успешный порядок без реального SHA:
 
 ```bash
 cd /opt/lab-manager/repo
@@ -197,6 +197,10 @@ journalctl -u lab-manager-update.service -n 15 --no-pager
 curl --fail --silent --show-error --max-time 15 \
   https://ИМЯ_САЙТА/api/health/ready
 ```
+
+### Админский экран подтверждён
+
+30.09.2026 пользователь вошёл под Admin и увидел на странице «Серверы лаборатории» статус «Данные актуальны»: 24 логических CPU, 31.2 GiB общей и 29.2 GiB свободной RAM, три хранилища и две прежние тестовые машины. Время снимка отображается по локальной зоне браузера. Это завершает проверку цепочки Proxmox → mTLS → VPS worker → PostgreSQL → API → Admin UI для read-only inventory. Эти числа не являются автоматически доступными квотами для занятий: инфраструктурные резервы, дисковые обязательства, одновременные брони и безопасная вместимость ещё не рассчитаны; `admission_ready=false` сохраняется.
 
 Схема `nodes.json`:
 
