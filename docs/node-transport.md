@@ -34,6 +34,8 @@ python3 node-pki.py node-init --directory /etc/lab-manager-node/tls
 
 Сохранить выведенные `Node ID` и блок `-----BEGIN CERTIFICATE REQUEST-----` … `-----END CERTIFICATE REQUEST-----`. Это открытый запрос; файл `/etc/lab-manager-node/tls/server.key` и ранее созданный Proxmox API token не показывать и не передавать. Требуется именно полный CSR, без форматирования и лишних строк.
 
+29.09.2026 пользователь подтвердил этот этап на Proxmox: все четыре asset выпуска `28208ca6c608d07117ff7d6f97838f1f1441610c` прошли проверку SHA-256, `node-init` вывел новый Node ID и полный открытый CSR. Успех относится только к загрузке пакета и созданию запроса; сертификат ещё не подписан, служба не установлена. Реальный ID/CSR хранятся в локальном игнорируемом inventory, не в публичной инструкции. Исполненный блок не печатал и не передавал закрытый ключ.
+
 ## Создать центр доверия на VPS и подписать CSR
 
 Выполняется на VPS root после получения CSR. Код подписания тот же проверенный `node-pki.py` из выпуска. Если VPS checkout ещё на старом выпуске, получить его из уже проверенного Git commit командой `git show "$RELEASE_SHA:tools/node-pki.py" > /opt/lab-manager/node-pki.py` после `git fetch origin dev-proxmox` и проверки, что SHA является предком `origin/dev-proxmox`; публичную контрольную сумму сравнить с release asset. Отдельный каталог `/opt/lab-manager/transport-pki` хранит CA и клиентский закрытый ключ 0700. `control-init` одноразовый; при повторном вызове с существующими ключами откажет. CSR записывается в файл из дословно переданного публичного PEM. `NODE_ID` берётся из ответа Proxmox; `NODE_TAILNET_IP` проверяется на узле командой `tailscale ip -4`.
@@ -57,16 +59,18 @@ python3 /opt/lab-manager/node-pki.py sign-node \
 
 Вывод `sign-node` — одна строка base64 с публичным bundle: CA, сертификат сервера, ID узла и отпечатки сертификатов. Приватные ключи в неё не включены. Её можно перенести на Proxmox. `node.csr` и `public-bundle.json` можно хранить для аудита; `ca.key` и `client.key` остаются только на VPS. Срок server/client сертификатов — 365 дней; до истечения потребуется плановая ротация.
 
+29.09.2026 пользователь подтвердил выполнение `control-init` и `sign-node` на VPS для подготовленного узла: проверка SHA-256 `node-pki.py` прошла, новый CA/клиент созданы, подписанный публичный bundle выведен. Ассистент проверил по присланному bundle совпадение Node ID, адреса SAN, SHA-256 сертификата, цепочки issuer/subject и отсутствие закрытых ключей. Сертификат сервера действует до 29.09.2027 UTC. Это ещё не передача bundle на Proxmox и не проверка реального mTLS-соединения. Команды, выдавшие результат, сохранены выше без адресов конкретной установки.
+
 ## Установить постоянную службу на Proxmox
 
-Этот блок выполняется после получения публичного bundle. Строго проверить ID, адрес и отпечатки до старта; файл bundle создаётся в `/etc/lab-manager-node/public-bundle.b64` из одной строки предыдущего шага. `NODE_TAILNET_IP` — адрес самого Proxmox, не VPS. Использовать только один проверенный выпуск и не перезаписывать текущий `server.key`.
+Этот блок выполняется после получения публичного bundle. Строго проверить ID, адрес и отпечатки до старта; файл bundle создаётся в `/etc/lab-manager-node/public-bundle.b64`. Для переноса через терминал на VPS использовать `base64 -w76 /opt/lab-manager/transport-pki/<node-id>/public-bundle.json` и вставить многострочный вывод в quoted heredoc на Proxmox. Исходная однострочная строка длиннее типичного лимита одной строки терминала, поэтому не читать её одним интерактивным `read`. При декодировании убрать только переводы строк. `NODE_TAILNET_IP` — адрес самого Proxmox, не VPS. Использовать только один проверенный выпуск и не перезаписывать текущий `server.key`.
 
 ```bash
 set -euo pipefail
 umask 077
 RELEASE_SHA='ПОЛНЫЙ_SHA_ИЗ_УСПЕШНОГО_CI'
 stage="/opt/lab-manager-node/releases/$RELEASE_SHA"
-install -d -m 0700 /etc/lab-manager-node
+install -d -m 0755 /etc/lab-manager-node
 cat > /etc/lab-manager-node/public-bundle.b64 <<'BUNDLE'
 ОДНА_СТРОКА_ПУБЛИЧНОГО_BUNDLE
 BUNDLE
@@ -74,7 +78,8 @@ python3 - <<'PY'
 import base64, hashlib, json, os, pathlib, ssl, subprocess
 directory = pathlib.Path('/etc/lab-manager-node')
 tls = directory / 'tls'
-bundle = json.loads(base64.b64decode((directory / 'public-bundle.b64').read_text().strip(), validate=True))
+encoded = ''.join((directory / 'public-bundle.b64').read_text().split())
+bundle = json.loads(base64.b64decode(encoded, validate=True))
 node_id = (tls / 'node-id').read_text().strip()
 assert bundle['node_id'] == node_id
 assert bundle['address'] == subprocess.check_output(['tailscale', 'ip', '-4'], text=True).strip()
@@ -92,6 +97,7 @@ config = {'listen_address': bundle['address'], 'listen_port': 18443,
           'node_id': node_id, 'client_sha256': bundle['client_sha256']}
 with (directory / 'service.json').open('x') as output:
     json.dump(config, output)
+os.chmod(directory / 'service.json', 0o644)
 print('Public certificate and configuration verified.')
 PY
 python3 -m venv "$stage/venv" </dev/null
