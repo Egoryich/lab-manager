@@ -163,7 +163,7 @@ python3 -c 'import json,sys; d=json.load(sys.stdin); s=d["sample"]; print(json.d
 
 30.09.2026 первый блок подключения узла остановился после успешного TCP-теста из worker: `Worker reaches node TCP port`. `install -o 10001 -g 10001` на хосте сообщил `invalid user: '10001'`; программа `install` этой версии разрешает владельца по имени, а такой локальной учётной записи нет. Публичные `ca.pem` и `client.pem` успели скопироваться, закрытый `client.key` не копировался, `nodes.json` остался `[]`, worker не перезапускался и опрос не включился. Исправленный способ для числового UID контейнера: сначала `install -o root -g root -m 0400 SOURCE DEST`, затем `chown 10001:10001 DEST`; результат проверить `stat`, чтением файла внутри worker и mTLS-запросом до замены `nodes.json`.
 
-Пользователь выполнил исправленный блок 30.09.2026: `stat` подтвердил UID/GID 10001 и mode 0400 закрытого клиентского ключа. Проверка публичного bundle подтвердила ID, tailnet-адрес, CA и SHA-256 клиентского сертификата. `fetch(load_endpoints(...))` внутри worker прошёл mTLS и получил актуальный снимок. После атомарной замены `nodes.json` и `docker compose up -d --no-deps --force-recreate --pull never --wait worker` worker стал healthy; SQL-запрос к `node_observations` подтвердил одну свежую запись без ошибки и с payload. Все пять контейнеров healthy на одном проверенном выпуске. Админский экран и принятие выпуска updater ещё проверяются отдельно. Исправленные команды сохранены ниже без секретов и реальных ID/IP:
+Пользователь выполнил исправленный блок 30.09.2026: `stat` подтвердил UID/GID 10001 и mode 0400 закрытого клиентского ключа. Проверка публичного bundle подтвердила ID, tailnet-адрес, CA и SHA-256 клиентского сертификата. `fetch(load_endpoints(...))` внутри worker прошёл mTLS и получил актуальный снимок. После атомарной замены `nodes.json` и `docker compose up -d --no-deps --force-recreate --pull never --wait worker` worker стал healthy; SQL-запрос к `node_observations` подтвердил одну свежую запись без ошибки и с payload. Все пять контейнеров healthy на одном проверенном выпуске. Админский экран проверяется отдельно. Исправленные команды сохранены ниже без секретов и реальных ID/IP:
 
 ```bash
 install -o root -g root -m 0400 /opt/lab-manager/transport-pki/client.key \
@@ -178,6 +178,22 @@ docker compose --env-file .env.vps -f infra/vps/compose.yml \
   up -d --no-deps --force-recreate --pull never --wait --wait-timeout 120 worker
 # Проверить node_observations: error_code IS NULL, payload IS NOT NULL,
 # last_contact_at > now() - interval '2 minutes'.
+```
+
+### VPS updater снова работает
+
+30.09.2026 пользователь выполнил `python3 tools/update-vps.py --adopt </dev/null` и `bash tools/install-vps-updater.sh "$release" </dev/null`. Вывод подтвердил `Adopted manually verified running release`, затем `Already current` для установленного полного SHA. `lab-manager-update.timer` включён и назначил следующий запуск; `systemctl show --no-pager` вернул `Result=success`, `ExecMainStatus=0`. Исторические ошибки `Release changes schema or Compose; manual deployment required` в той же выборке journal относятся к попыткам до ручной миграции; последняя запись — успешная проверка текущего выпуска. В присланном выводе нет результата последнего публичного `curl`, поэтому его отдельная проверка и админский экран ещё не подтверждены этим блоком. Успешный порядок без реального SHA:
+
+```bash
+cd /opt/lab-manager/repo
+release='ПОЛНЫЙ_SHA_УСТАНОВЛЕННОГО_ВЫПУСКА'
+test "$(git rev-parse HEAD)" = "$release"
+test ! -e /opt/lab-manager/update-state/pending.json
+python3 tools/update-vps.py --adopt </dev/null
+bash tools/install-vps-updater.sh "$release" </dev/null
+systemctl list-timers --all lab-manager-update.timer --no-pager
+systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
+journalctl -u lab-manager-update.service -n 15 --no-pager
 ```
 
 Схема `nodes.json`:
