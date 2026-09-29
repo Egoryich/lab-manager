@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     public_origin: str
     session_hours: int = 12
     password_hash_concurrency: int = Field(default=2, ge=1, le=4)
+    node_config: str | None = None
 
     @model_validator(mode="after")
     def validate_security(self):

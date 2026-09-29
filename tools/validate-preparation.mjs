@@ -69,7 +69,7 @@ try {
   const files = [];
   const walk = dir => {
     for (const item of fs.readdirSync(dir, {withFileTypes: true})) {
-      if (['.git', '.cache', 'node_modules', '.venv', 'artifacts', 'test-results', 'dist'].includes(item.name)) continue;
+      if (['.git', '.cache', '.pytest_cache', 'node_modules', '.venv', 'artifacts', 'test-results', 'dist'].includes(item.name)) continue;
       const full = path.join(dir, item.name);
       if (item.isDirectory()) walk(full);
       else if (item.name.endsWith('.md')) files.push(full);

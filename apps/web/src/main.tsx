@@ -24,6 +24,7 @@ import '@fontsource/unbounded/cyrillic-700.css';
 import '@fontsource/unbounded/latin-700.css';
 import './style.css';
 import { CatalogAdmin, EnvironmentPanel } from './catalog';
+import { NodePanel } from './nodes';
 
 type Session = components['schemas']['SessionView'];
 type Group = components['schemas']['GroupView'];
@@ -693,13 +694,18 @@ function App() {
             ▦ <span>Учебные группы</span>
           </NavLink>
           {value.user.roles.includes('ADMIN') && (
-            <NavLink to="/admin">
+            <NavLink to="/admin" end>
               ☷ <span>Пользователи</span>
             </NavLink>
           )}
           {value.user.roles.includes('ADMIN') && (
             <NavLink to="/admin/catalog">
               ◇ <span>Профили и права</span>
+            </NavLink>
+          )}
+          {value.user.roles.includes('ADMIN') && (
+            <NavLink to="/admin/nodes">
+              ▤ <span>Серверы</span>
             </NavLink>
           )}
         </nav>
@@ -725,6 +731,9 @@ function App() {
             {value.user.roles.includes('ADMIN') && <Route path="/admin" element={<Admin />} />}
             {value.user.roles.includes('ADMIN') && (
               <Route path="/admin/catalog" element={<CatalogAdmin />} />
+            )}
+            {value.user.roles.includes('ADMIN') && (
+              <Route path="/admin/nodes" element={<NodePanel />} />
             )}
             <Route
               path="*"

@@ -3636,6 +3636,111 @@
           }
         }
       }
+    },
+    "/api/admin/nodes": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "List Nodes",
+        "operationId": "list_nodes_api_admin_nodes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NodeView"
+                  },
+                  "type": "array",
+                  "title": "Response List Nodes Api Admin Nodes Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4015,6 +4120,71 @@
         ],
         "title": "GroupView"
       },
+      "HostObservation": {
+        "properties": {
+          "memory_total_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Memory Total Bytes"
+          },
+          "memory_used_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Memory Used Bytes"
+          },
+          "memory_free_bytes": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Memory Free Bytes"
+          },
+          "logical_cpus": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Logical Cpus"
+          },
+          "cores_reported": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cores Reported"
+          },
+          "sockets": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sockets"
+          },
+          "uptime_seconds": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Uptime Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "memory_total_bytes",
+          "memory_used_bytes",
+          "memory_free_bytes",
+          "logical_cpus",
+          "cores_reported",
+          "sockets",
+          "uptime_seconds"
+        ],
+        "title": "HostObservation"
+      },
       "Login": {
         "properties": {
           "username": {
@@ -4040,6 +4210,108 @@
           "password"
         ],
         "title": "Login"
+      },
+      "NodeView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "last_contact_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Contact At"
+          },
+          "sampled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sampled At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HostObservation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "guest_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guest Count"
+          },
+          "storage_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Count"
+          },
+          "admission_ready": {
+            "type": "boolean",
+            "title": "Admission Ready",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "status",
+          "last_contact_at",
+          "sampled_at",
+          "error_code",
+          "host",
+          "guest_count",
+          "storage_count"
+        ],
+        "title": "NodeView"
       },
       "OperationView": {
         "properties": {

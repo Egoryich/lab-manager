@@ -29,6 +29,7 @@ htmlcov/
 
 # Runtime and test artifacts
 artifacts/
+/node-transport/
 test-results/
 playwright-report/
 *.log

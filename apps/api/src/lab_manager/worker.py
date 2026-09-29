@@ -25,6 +25,8 @@ from lab_manager.catalog_schemas import EnvironmentCreate
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.models import User, UserRole
+from lab_manager.node_transport import load_endpoints
+from lab_manager.nodes import poll_forever
 from lab_manager.operation_models import Operation, WorkerHeartbeat
 from lab_manager.operations import VALIDATE, ValidationResult, event
 
@@ -239,11 +241,15 @@ async def run(once=False):
         except NotImplementedError:
             pass  # Windows development; Linux containers use graceful signals.
     worker_id = uuid.uuid4()
+    poller = None
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-            if revision != "0003_operations":
-                raise RuntimeError("Worker requires migration 0003_operations")
+            if revision != "0004_nodes":
+                raise RuntimeError("Worker requires migration 0004_nodes")
+        endpoints = load_endpoints(settings.node_config or None)
+        if endpoints and not once:
+            poller = asyncio.create_task(poll_forever(sessions, endpoints, stop))
         while not stop.is_set():
             delay = 2
             try:
@@ -262,6 +268,9 @@ async def run(once=False):
             except TimeoutError:
                 pass
     finally:
+        stop.set()
+        if poller:
+            await poller
         await engine.dispose()
 
 

@@ -21,8 +21,10 @@ jobs:
           python -m venv /tmp/lab-agent-package-test
           /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
           /tmp/lab-agent-package-test/bin/lab-node-agent --help
+          /tmp/lab-agent-package-test/bin/python -m lab_node_agent.service --help
+          cp infra/proxmox/lab-node-agent.service tools/node-pki.py artifacts/node-agent/
           cd artifacts/node-agent
-          sha256sum *.whl > SHA256SUMS
+          sha256sum *.whl *.service *.py > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: node-agent-${{ github.sha }}
@@ -50,7 +52,7 @@ jobs:
           else
             gh release create "$tag" release/* --target "$GITHUB_SHA" --prerelease \
               --title "Node inventory ${GITHUB_SHA}" \
-              --notes "Read-only Proxmox inventory component. No remote listener or guest changes. Installation remains manual; see docs/proxmox-agent-first-install.md at this commit."
+              --notes "Read-only Proxmox inventory with pinned mTLS service. No guest changes. Manual deployment: docs/node-transport.md at this commit."
           fi
   identity-groups:
     runs-on: ubuntu-latest

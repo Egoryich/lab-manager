@@ -81,7 +81,11 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     logging: *logging
-    environment: *application-environment
+    environment:
+      <<: *application-environment
+      LAB_NODE_CONFIG: ${LAB_NODE_CONFIG:-}
+    volumes:
+      - ${LAB_NODE_TRANSPORT_DIR:-./node-transport}:/run/lab-node-transport:ro
     command: [/app/.venv/bin/python, -m, lab_manager.worker]
     stop_grace_period: 30s
     networks: [backend]

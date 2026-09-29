@@ -468,6 +468,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Nodes */
+        get: operations["list_nodes_api_admin_nodes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -627,6 +644,23 @@ export interface components {
             /** Member Count */
             member_count?: number | null;
         };
+        /** HostObservation */
+        HostObservation: {
+            /** Memory Total Bytes */
+            memory_total_bytes: number;
+            /** Memory Used Bytes */
+            memory_used_bytes: number;
+            /** Memory Free Bytes */
+            memory_free_bytes: number;
+            /** Logical Cpus */
+            logical_cpus: number;
+            /** Cores Reported */
+            cores_reported: number | null;
+            /** Sockets */
+            sockets: number | null;
+            /** Uptime Seconds */
+            uptime_seconds: number;
+        };
         /** Login */
         Login: {
             /** Username */
@@ -636,6 +670,34 @@ export interface components {
              * Format: password
              */
             password: string;
+        };
+        /** NodeView */
+        NodeView: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Last Contact At */
+            last_contact_at: string | null;
+            /** Sampled At */
+            sampled_at: string | null;
+            /** Error Code */
+            error_code: string | null;
+            host: components["schemas"]["HostObservation"] | null;
+            /** Guest Count */
+            guest_count: number | null;
+            /** Storage Count */
+            storage_count: number | null;
+            /**
+             * Admission Ready
+             * @default false
+             */
+            admission_ready: boolean;
         };
         /** OperationView */
         OperationView: {
@@ -3791,6 +3853,98 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkerStatus"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    list_nodes_api_admin_nodes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeView"][];
                 };
             };
             /** @description Bad Request */

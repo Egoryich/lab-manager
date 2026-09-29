@@ -756,7 +756,8 @@ nav a.active {
     display: none;
   }
   .sidebar nav {
-    flex-direction: row;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 20px;
   }
   .sidebar-bottom {

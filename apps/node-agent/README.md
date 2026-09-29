@@ -1,8 +1,8 @@
 # Lab Node Agent
 
-Первый реализованный компонент — read-only Proxmox adapter и CLI `lab-node-agent`. Отдельный Python-пакет без runtime-зависимостей, с собственным lockfile для тестов. Читает inventory по проверенному HTTPS с API token; не изменяет гостей и не открывает сетевой порт.
+Реализованы read-only Proxmox adapter, CLI `lab-node-agent` и служба `python -m lab_node_agent.service`. Отдельный Python-пакет без runtime-зависимостей, с собственным lockfile для тестов. Читает inventory по проверенному HTTPS с API token; не изменяет гостей. Служба отдаёт снимок только через mTLS с закреплённым сертификатом клиента.
 
-Целевой агент — Python systemd service на node, типизированные команды, mTLS, durable command receipts, Proxmox/network/storage adapters. Listener, доставка снимков на VPS и автоматическое обновление агента пока не реализованы. CLI и адаптер входят в эту целевую основу; произвольного shell API нет.
+Служба и опрос с VPS подготовлены к ручной установке: [защищённый транспорт](../../docs/node-transport.md). Подтверждённый запуск на физическом узле пока относится к CLI 0.1.0. Типизированные команды изменения, durable receipts, сетевые операции и автоматическое обновление агента ещё не реализованы; произвольного shell API нет.
 
 [Подготовка установки и границы inventory](../../docs/proxmox-agent-first-install.md).
 
