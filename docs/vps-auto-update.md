@@ -43,7 +43,7 @@ sudo journalctl -u lab-manager-update.service -n 30 --no-pager
 curl --fail "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}/api/health/ready"
 ```
 
-Сервис имеет тип oneshot, поэтому `inactive (dead)` после успешного выполнения нормален; результат смотрите через `systemctl show lab-manager-update.service -p Result -p ExecMainStatus`. Timer должен быть активен.
+Сервис имеет тип oneshot, поэтому `inactive (dead)` после успешного выполнения нормален; результат смотрите через `systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus`. Timer должен быть активен.
 
 ## Если после установки нет timer и журнал пуст
 
