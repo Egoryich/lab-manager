@@ -182,7 +182,7 @@ docker compose --env-file .env.vps -f infra/vps/compose.yml \
 
 ### VPS updater снова работает
 
-30.09.2026 пользователь выполнил `python3 tools/update-vps.py --adopt </dev/null` и `bash tools/install-vps-updater.sh "$release" </dev/null`. Вывод подтвердил `Adopted manually verified running release`, затем `Already current` для установленного полного SHA. `lab-manager-update.timer` включён и назначил следующий запуск; `systemctl show --no-pager` вернул `Result=success`, `ExecMainStatus=0`. Исторические ошибки `Release changes schema or Compose; manual deployment required` в той же выборке journal относятся к попыткам до ручной миграции; последняя запись — успешная проверка текущего выпуска. В присланном выводе нет результата последнего публичного `curl`, поэтому его отдельная проверка и админский экран ещё не подтверждены этим блоком. Успешный порядок без реального SHA:
+30.09.2026 пользователь выполнил `python3 tools/update-vps.py --adopt </dev/null` и `bash tools/install-vps-updater.sh "$release" </dev/null`. Вывод подтвердил `Adopted manually verified running release`, затем `Already current` для установленного полного SHA. `lab-manager-update.timer` включён и назначил следующий запуск; `systemctl show --no-pager` вернул `Result=success`, `ExecMainStatus=0`. Исторические ошибки `Release changes schema or Compose; manual deployment required` в той же выборке journal относятся к попыткам до ручной миграции; последняя запись — успешная проверка текущего выпуска. Отдельный публичный `curl --fail --silent --show-error --max-time 15` вернул `{"status":"ready"}`. Админский экран ещё проверяется отдельно. Успешный порядок без реального SHA:
 
 ```bash
 cd /opt/lab-manager/repo
@@ -194,6 +194,8 @@ bash tools/install-vps-updater.sh "$release" </dev/null
 systemctl list-timers --all lab-manager-update.timer --no-pager
 systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
 journalctl -u lab-manager-update.service -n 15 --no-pager
+curl --fail --silent --show-error --max-time 15 \
+  https://ИМЯ_САЙТА/api/health/ready
 ```
 
 Схема `nodes.json`:
