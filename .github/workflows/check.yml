@@ -3,6 +3,55 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  node-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install uv==0.9.8
+      - run: uv sync --project apps/node-agent --locked
+      - run: uv run --project apps/node-agent ruff check apps/node-agent
+      - run: uv run --project apps/node-agent ruff format --check apps/node-agent
+      - run: uv run --project apps/node-agent pytest apps/node-agent/tests -c apps/node-agent/pyproject.toml -q
+      - run: uv build --project apps/node-agent --wheel --out-dir artifacts/node-agent
+      - name: Check standalone installation
+        run: |
+          python -m venv /tmp/lab-agent-package-test
+          /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
+          /tmp/lab-agent-package-test/bin/lab-node-agent --help
+          cd artifacts/node-agent
+          sha256sum *.whl > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: node-agent-${{ github.sha }}
+          path: artifacts/node-agent/
+          if-no-files-found: error
+  node-agent-release:
+    needs: [identity-groups, node-agent]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev-proxmox'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: node-agent-${{ github.sha }}
+          path: release
+      - name: Publish verified node component
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="node-agent-${GITHUB_SHA}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release already exists; assets are not overwritten."
+          else
+            gh release create "$tag" release/* --target "$GITHUB_SHA" --prerelease \
+              --title "Node inventory ${GITHUB_SHA}" \
+              --notes "Read-only Proxmox inventory component. No remote listener or guest changes. Installation remains manual; see docs/proxmox-agent-first-install.md at this commit."
+          fi
   identity-groups:
     runs-on: ubuntu-latest
     steps:
