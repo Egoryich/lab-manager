@@ -32,5 +32,5 @@ install -o root -g root -m 0644 "$stage/lab-manager-update.service" /etc/systemd
 install -o root -g root -m 0644 "$stage/lab-manager-update.timer" /etc/systemd/system/lab-manager-update.timer
 systemctl daemon-reload
 systemctl enable --now lab-manager-update.timer
-systemctl start lab-manager-update.service
-echo 'Updater installed. Inspect: journalctl -u lab-manager-update.service -n 30 --no-pager'
+systemctl start --no-block lab-manager-update.service
+echo 'Updater installed; release check started in the background. Inspect: journalctl -u lab-manager-update.service -n 30 --no-pager'
