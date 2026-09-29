@@ -65,6 +65,11 @@ test('administrator configures profiles and teacher prepares an environment', as
   await teacher.screenshot({ path: 'artifacts/environment-estimate.png', fullPage: true });
   await teacher.getByRole('button', { name: 'Создать окружение', exact: true }).click();
   await expect(teacher.getByText('Подготовлено', { exact: true })).toBeVisible();
+  await teacher.getByRole('button', { name: 'Проверить конфигурацию' }).click();
+  await expect(teacher.getByText('Проверка завершена', { exact: true })).toBeVisible();
+  await teacher.reload();
+  await expect(teacher.getByText('Проверка завершена', { exact: true })).toBeVisible();
+  await teacher.screenshot({ path: 'artifacts/environment-operation.png', fullPage: true });
   await teacher.setViewportSize({ width: 390, height: 844 });
   expect(await teacher.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
     true,

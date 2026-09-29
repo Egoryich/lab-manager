@@ -90,7 +90,11 @@ def updater(tmp_path, monkeypatch):
         "# keep\nLAB_API_IMAGE=api:old\nLAB_WEB_IMAGE=web:old\n"
         "POSTGRES_PASSWORD=unchanged\nLAB_PUBLIC_ORIGIN=https://lab.example.org\n"
     )
-    monkeypatch.setattr(update, "running_image", lambda service: "sha256:" + service[0] * 64)
+    monkeypatch.setattr(
+        update,
+        "running_image",
+        lambda service: "sha256:" + ("a" if service == "worker" else service[0]) * 64,
+    )
     monkeypatch.setattr(update, "ready", lambda: None)
     monkeypatch.setattr(update, "schema", lambda: "0002_catalog")
     state = {
@@ -99,7 +103,7 @@ def updater(tmp_path, monkeypatch):
         "compose_hash": module.content_hash(update.compose_file),
         "env_hash": module.content_hash(update.env),
         "schema_revision": "0002_catalog",
-        "images": {s: update.running_image(s) for s in ("api", "web")},
+        "images": {s: update.running_image(s) for s in ("api", "web", "worker")},
     }
     update.save_state(state)
     return update, state
@@ -114,8 +118,24 @@ def test_success_preserves_secrets_and_commits_state(updater, monkeypatch):
     assert update.env.read_text().startswith("# keep\n")
     assert json.loads(update.state_file.read_text())["active_sha"] == NEW
     assert not update.pending.exists()
-    assert calls[0][1][-2:] == ("api", "web")
+    assert calls[0][1][-3:] == ("api", "web", "worker")
     assert "--no-deps" in calls[0][1] and "--pull" in calls[0][1]
+
+
+def test_worker_image_drift_blocks_apply_before_pending(updater, monkeypatch):
+    update, state = updater
+    monkeypatch.setattr(update, "running_image", lambda service: service)
+    with pytest.raises(RuntimeError, match="API and worker images differ"):
+        update.apply(NEW, state, update.env.read_text(), "api@digest", "web@digest")
+    assert not update.pending.exists()
+
+
+def test_legacy_state_requires_explicit_worker_rollout(updater):
+    update, state = updater
+    del state["images"]["worker"]
+    update.save_state(state)
+    with pytest.raises(RuntimeError, match="Worker rollout"):
+        update.tick()
 
 
 @pytest.mark.parametrize("failure", ["compose", "ready"])

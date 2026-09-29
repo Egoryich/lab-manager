@@ -85,9 +85,54 @@ def main():
                 "-m",
                 "alembic",
                 "upgrade",
+                "0002_catalog",
+            )
+            # Upgrade an existing catalog database without losing an existing account.
+            compose(
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "lab",
+                "-d",
+                "lab",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                "INSERT INTO users (id, username, display_name, status, auth_revision) "
+                "VALUES ('00000000-0000-0000-0000-000000000001', 'migration.probe', "
+                "'Migration probe', 'ACTIVE', 1)",
+            )
+            compose(
+                "run",
+                "--rm",
+                "--no-deps",
+                "api",
+                "/app/.venv/bin/python",
+                "-m",
+                "alembic",
+                "upgrade",
                 "head",
             )
-            compose("up", "-d", "--wait", "--wait-timeout", "120", "api", "web")
+            preserved = subprocess.check_output(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Atc",
+                    "SELECT count(*) FROM users WHERE username='migration.probe'",
+                ],
+                text=True,
+            ).strip()
+            assert preserved == "1"
+            compose("up", "-d", "--wait", "--wait-timeout", "120", "api", "web", "worker")
             assert request("/api/health/ready")[0] == 200
             status, _, html = request("/groups/example", port=18080)
             assert status == 200 and b'<div id="root">' in html
@@ -121,7 +166,7 @@ def main():
             shutil.copyfile(env_file, update_root / "repo/.env.vps")
             update = updater_module.Updater(update_root, project=project)
             update.ready = lambda: updater_module.Updater.ready(update, public=False)
-            image_ids = {s: update.running_image(s) for s in ("api", "web")}
+            image_ids = {s: update.running_image(s) for s in ("api", "web", "worker")}
             state = {
                 "active_sha": "a" * 40,
                 "failed_sha": None,
@@ -150,7 +195,8 @@ def main():
                 raise AssertionError("Missing release image must fail")
             assert json.loads(update.state_file.read_text())["failed_sha"] == "c" * 40
             assert update.running_image("api") == image_ids["api"]
-            assert update.schema() == "0002_catalog"
+            assert update.running_image("worker") == image_ids["worker"]
+            assert update.schema() == "0003_operations"
             assert request("/api/auth/me", headers=authenticated)[0] == 200
             compose("ps")
             print(

@@ -72,3 +72,7 @@ sudo python3 /usr/local/lib/lab-manager/update-vps.py --retry
 Для ручного выпуска с миграцией/новым Compose отключите timer, дождитесь окончания service, выполните согласованные инструкции конкретного выпуска, переключите checkout на его SHA и задайте оба SHA-тега в `.env.vps`, сохранив секреты. После миграции и проверки выполните `sudo python3 /usr/local/lib/lab-manager/update-vps.py --adopt`, затем снова включите timer. Adopt проверяет совпадение checkout, env, работающих образов и readiness, но не заменяет проверку полного CI и совместимости вручную развёрнутого выпуска. При pending-операции adopt запрещён.
 
 Источники: [GitHub workflow runs API](https://docs.github.com/en/rest/actions/workflow-runs), [Docker Compose up](https://docs.docker.com/reference/cli/docker/compose/up/).
+
+## После добавления worker
+
+Начиная с выпуска `0003_operations` updater обновляет и восстанавливает API, web и worker совместно. Worker использует тот же API-образ; различие image IDs блокирует применение. Готовность включает Docker healthcheck worker. Старый baseline без worker требует ручного перехода: [гайд выпуска](vps-worker-rollout.md). Ранее установленный updater нужно заменить при этом переходе; новые миграции по-прежнему автоматически не применяются.

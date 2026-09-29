@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@lab/client-sdk';
 import type { components } from '@lab/shared-types';
+import { EnvironmentValidation } from './operations';
 
 type Policy = components['schemas']['PolicyCreate'];
 type Draft = components['schemas']['EnvironmentCreate'];
@@ -566,6 +567,7 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
             <strong>{e.name}</strong>
             <span className="pill">Подготовлено</span>
             <small>Профили закреплены. Машины ещё не созданы, ресурсы не зарезервированы.</small>
+            {canCreate && <EnvironmentValidation environment={e} />}
           </li>
         ))}
       </ul>

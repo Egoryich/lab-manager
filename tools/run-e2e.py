@@ -30,6 +30,7 @@ async def run():
     schema = "lab_test_" + uuid.uuid4().hex
     admin_engine = create_async_engine(settings.database_url.get_secret_value())
     api_process = None
+    worker_process = None
     engine = None
     Path("artifacts").mkdir(exist_ok=True)
     try:
@@ -67,7 +68,17 @@ async def run():
             "LAB_E2E_PASSWORD": password,
         }
         # The application launcher also selects the psycopg-compatible Windows loop.
-        with Path("artifacts/e2e-api.log").open("w") as log:
+        with (
+            Path("artifacts/e2e-api.log").open("w") as log,
+            Path("artifacts/e2e-worker.log").open("w") as worker_log,
+        ):
+            worker_process = subprocess.Popen(
+                [sys.executable, "-m", "lab_manager.worker"],
+                env=env,
+                stdout=worker_log,
+                stderr=worker_log,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
             api_process = subprocess.Popen(
                 [
                     sys.executable,
@@ -105,6 +116,9 @@ async def run():
             )
             return result.returncode
     finally:
+        if worker_process:
+            worker_process.terminate()
+            worker_process.wait(timeout=30)
         if api_process:
             api_process.terminate()
             api_process.wait(timeout=15)

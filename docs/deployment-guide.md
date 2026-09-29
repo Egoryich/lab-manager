@@ -37,11 +37,14 @@ free -h
 lsblk -o NAME,SIZE,MODEL,SERIAL,FSTYPE,MOUNTPOINTS
 pveversion -v
 pvesm status
+lvs -o vg_name,lv_name,lv_size,data_percent,metadata_percent
 pct list
 qm list
 ip -br address
 ip route
 ```
+
+Подтверждено пользователем 29.09.2026: на Proxmox успешно выполнены `lscpu`, `free -h`, `pveversion -v`, `pvesm status`, `lvs -o vg_name,lv_name,lv_size,data_percent,metadata_percent`, `pct list`, `qm list`. Предусловия: установленный Proxmox и root-shell; команды только читают состояние. Ожидаемый результат — характеристики CPU/RAM, версии, активные storage, заполнение thin data/metadata и списки гостей; пустой `qm list` допустим при отсутствии QEMU VM. В присланном выводе два остановленных тестовых LXC и ни одной QEMU VM. Результаты учтены в [оценке оборудования](hardware-assessment.md); остальные команды этого блока данным сообщением не проверены. Тестовое назначение гостей не разрешает их автоматическое удаление.
 
 Все 25 разделов предоставленного гайда сохранены в [обезличенной записи Proxmox + Headscale](proxmox-headscale-reference.md): repositories, SMART, storage, тестовый LXC, bridge, forwarding/NAT, Headscale, Caddy, Tailscale, маршруты и проверки после reboot. Адреса и ID заменены текстовыми параметрами `<...>`, которые нужно заменить перед выполнением. Это историческая запись стенда, а не скрипт для повторного применения к работающему серверу. Wipe Disk относится только к выбранному пустому диску при первой установке.
 
@@ -120,3 +123,7 @@ systemctl list-timers --all lab-manager-update.timer --no-pager
 ```
 
 Отдельно проверить вход Admin и восстановление туннеля после включения Proxmox. Остальные этапы полной поставки перечислены в [плане реализации](implementation-plan.md).
+
+## 8. Следующий выпуск: очередь и worker
+
+Для добавления пятого контейнера и миграции `0003_operations` используйте [пошаговый переход](vps-worker-rollout.md). Не применять как обычное автоматическое обновление: требуется окно остановки API, проверка схемы, готовности worker и новый baseline updater. Выполнение этого перехода на VPS пока не подтверждено пользователем.

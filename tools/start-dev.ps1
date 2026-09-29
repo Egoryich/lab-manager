@@ -50,6 +50,7 @@ $started = @()
 try {
     $started += Start-Process -FilePath $python -ArgumentList '-m', 'lab_manager' -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput "$projectRoot\.cache\dev-api.stdout.log" -RedirectStandardError "$projectRoot\.cache\dev-api.stderr.log" -PassThru
     Wait-Http 'http://127.0.0.1:8000/api/health/ready'
+    $started += Start-Process -FilePath $python -ArgumentList '-m', 'lab_manager.worker' -WorkingDirectory $projectRoot -WindowStyle Hidden -RedirectStandardOutput "$projectRoot\.cache\dev-worker.stdout.log" -RedirectStandardError "$projectRoot\.cache\dev-worker.stderr.log" -PassThru
     $started += Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList '../../node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--strictPort' -WorkingDirectory "$projectRoot\apps\web" -WindowStyle Hidden -RedirectStandardOutput "$projectRoot\.cache\dev-web.stdout.log" -RedirectStandardError "$projectRoot\.cache\dev-web.stderr.log" -PassThru
     Wait-Http 'http://localhost:5173/api/health/ready'
     Write-Host 'Lab Manager is ready: http://localhost:5173/'

@@ -169,11 +169,18 @@ class Updater:
                             raise RuntimeError("Unexpected readiness response")
                         if url.endswith("/ready") and json.load(response) != {"status": "ready"}:
                             raise RuntimeError("API is not ready")
+                container = self.compose(self.env, "ps", "-q", "worker")
+                if (
+                    not container
+                    or run("docker", "inspect", "--format", "{{.State.Health.Status}}", container)
+                    != "healthy"
+                ):
+                    raise RuntimeError("Worker is not healthy")
                 return
             except Exception:
                 if attempt == 2:
                     raise RuntimeError(
-                        "Readiness failed; check local API, frontend and HTTPS"
+                        "Readiness failed; check local API, frontend, worker and HTTPS"
                     ) from None
                 time.sleep(2)
 
@@ -212,7 +219,11 @@ class Updater:
             raise RuntimeError("Bootstrap checkout must match the currently installed images")
         self.git("diff", "--exit-code", "HEAD", "--", "infra/vps/compose.yml")
         self.ready()
-        for service, key in (("api", "LAB_API_IMAGE"), ("web", "LAB_WEB_IMAGE")):
+        for service, key in (
+            ("api", "LAB_API_IMAGE"),
+            ("web", "LAB_WEB_IMAGE"),
+            ("worker", "LAB_API_IMAGE"),
+        ):
             container = self.compose(self.env, "ps", "-q", service)
             if run("docker", "inspect", "--format", "{{.Config.Image}}", container) != values[key]:
                 raise RuntimeError("Running containers do not match deployment env")
@@ -222,7 +233,9 @@ class Updater:
             "compose_hash": content_hash(self.compose_file),
             "env_hash": content_hash(self.env),
             "schema_revision": self.schema(),
-            "images": {service: self.running_image(service) for service in ("api", "web")},
+            "images": {
+                service: self.running_image(service) for service in ("api", "web", "worker")
+            },
         }
         self.save_state(state)
         return state
@@ -250,6 +263,7 @@ class Updater:
             "120",
             "api",
             "web",
+            "worker",
         )
         atomic(self.env, self.previous.read_text())
         self.ready()
@@ -261,6 +275,8 @@ class Updater:
         print("Previous application restored; failed release is blocked", flush=True)
 
     def apply(self, sha, state, contents, api, web):
+        if self.running_image("worker") != self.running_image("api"):
+            raise RuntimeError("API and worker images differ; manual recovery required")
         previous = image_env(contents, self.running_image("api"), self.running_image("web"))
         atomic(self.previous, previous)
         atomic(self.candidate, image_env(contents, api, web))
@@ -280,6 +296,7 @@ class Updater:
                 "120",
                 "api",
                 "web",
+                "worker",
             )
             self.ready()
             atomic(self.env, self.candidate.read_text())
@@ -289,7 +306,7 @@ class Updater:
                     "active_sha": sha,
                     "failed_sha": None,
                     "env_hash": content_hash(self.env),
-                    "images": {s: self.running_image(s) for s in ("api", "web")},
+                    "images": {s: self.running_image(s) for s in ("api", "web", "worker")},
                 }
             )
             self.pending.unlink()
@@ -306,6 +323,8 @@ class Updater:
             self.recover()
             return
         state = self.state()
+        if set(state["images"]) != {"api", "web", "worker"}:
+            raise RuntimeError("Worker rollout and manual adoption required before auto-update")
         if content_hash(self.compose_file) != state["compose_hash"]:
             raise RuntimeError("Compose changed locally; manual review required")
         if content_hash(self.env) != state["env_hash"]:
@@ -314,7 +333,7 @@ class Updater:
             )
         if self.schema() != state["schema_revision"]:
             raise RuntimeError("Database revision changed; manual adoption required")
-        if any(self.running_image(s) != state["images"][s] for s in ("api", "web")):
+        if any(self.running_image(s) != state["images"][s] for s in ("api", "web", "worker")):
             raise RuntimeError("Running images changed outside updater; manual adoption required")
         remote = self.git("remote", "get-url", "origin")
         if remote != f"https://github.com/{REPOSITORY}.git":

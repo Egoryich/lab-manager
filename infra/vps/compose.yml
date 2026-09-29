@@ -48,7 +48,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     logging: *logging
-    environment:
+    environment: &application-environment
       LAB_ENVIRONMENT: production
       LAB_DATABASE_URL: postgresql+psycopg://lab:${POSTGRES_PASSWORD}@postgres:5432/lab
       LAB_REDIS_URL: redis://redis:6379/0
@@ -70,6 +70,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+      start_period: 20s
+  worker:
+    image: ${LAB_API_IMAGE:?Set a verified immutable image tag}
+    restart: unless-stopped
+    mem_limit: 128m
+    pids_limit: 50
+    read_only: true
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+    environment: *application-environment
+    command: [/app/.venv/bin/python, -m, lab_manager.worker]
+    stop_grace_period: 30s
+    networks: [backend]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, /app/.venv/bin/python, -c, "import pathlib,time; age=time.monotonic()-float(pathlib.Path('/tmp/lab-manager-worker-health').read_text()); raise SystemExit(0 if 0 <= age <= 30 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
       start_period: 20s
   web:
     image: ${LAB_WEB_IMAGE:?Set a verified immutable image tag}
