@@ -137,3 +137,19 @@ ss -lntup | grep 18443
 ```
 
 Это пока ручная доставка двух выпусков. Обновлятор Proxmox и автоматическая ротация сертификатов ещё не готовы; журнал подтверждённых команд дополняется после каждого реального шага. Ограничения исходного inventory по thin metadata, дисковым обязательствам и ACL остаются; статья [первой установки](proxmox-agent-first-install.md) содержит подтверждённый одноразовый запуск.
+
+## Подтверждённый показ PV в интерфейсе VPS
+
+Выпуск `b9154e1f87b25e139fc623556bde26c5f3f15a4f` после успешного CI доставлен штатным VPS updater. Пользователь подтвердил `Result=success`, `ExecMainStatus=0`, совпадение `active_sha` и публичный ответ `{"status":"ready"}`. На странице администратора «Серверы» появились столбцы «PV по LVM» и «Проверка PV»: для обоих thin pool видны устройства, полученные от Proxmox-агента, и «Не завершена»; у обычного файлового storage PV отсутствует. Это отображение диагностических данных, а не допуск к созданию машин. Поля API остаются доступными только администратору.
+
+Успешные команды проверки, без адресов и секретов:
+
+```bash
+cd /opt/lab-manager/repo
+sudo systemctl start lab-manager-update.service
+systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
+python3 -c 'import json; print(json.load(open("/opt/lab-manager/update-state/state.json"))["active_sha"])'
+curl --fail --silent --show-error 'https://<lab-domain>/api/health/ready'
+```
+
+Проверенный результат: `active_sha` совпал с SHA выпуска, updater завершился без ошибки, readiness вернул `ready`. Проверка исходного снимка и периодического обновления агента сохранена в `docs/proxmox-storage-probe.md` ветки `dev-proxmox`.
