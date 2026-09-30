@@ -4,13 +4,31 @@
 
 ## Подтверждённое состояние сети узла — 30 сентября 2026
 
-Пользователь выполнил на Proxmox read-only команды `pvesh get "/nodes/$(hostname)/network" --output-format json`, `cat /etc/network/interfaces` и `pve-firewall status`. Рабочий `vmbr0` соединён с физическим интерфейсом и несёт management-адрес и default gateway. `vmbr1` не имеет физического порта, но имеет адрес шлюза для одной общей учебной подсети; его текущие правила делают NAT во внешнюю сеть и запрещают forwarding только в management-подсеть. Proxmox firewall сообщает `disabled/running`. Адреса и имена физического интерфейса установки здесь намеренно не приведены.
+Пользователь выполнил на Proxmox read-only команды `pvesh get "/nodes/$(hostname)/network" --output-format json`, `cat /etc/network/interfaces` и `pve-firewall status`. Рабочий `vmbr0` соединён с физическим интерфейсом и несёт management-адрес и default gateway. `vmbr1` не имеет физического порта, но имеет адрес шлюза для одной общей учебной подсети. Его конфигурация содержит старые `post-up` правила NAT и фильтрации, однако это не доказывает их применения. Proxmox firewall сообщает `disabled/running`. Адреса и имена физического интерфейса установки здесь намеренно не приведены.
 
 `vmbr1` в этом виде не обеспечивает режим `ISOLATED`: все подключённые к одному bridge гости имеют общий L2-домен, а правила IP `FORWARD` не разделяют их локальный обмен внутри bridge. Не прикреплять новые учебные Runtime к `vmbr0` или к общей untagged-сети `vmbr1` как к доказанно изолированной. `vmbr0` и действующий путь управления не менять при подготовке учебных сегментов.
 
 Агент версии 0.8.0 подготовлен к чтению списка Linux bridges и их портов через Proxmox API. Это наблюдение помогает увидеть ошибочное подключение к физическому uplink, но не доказывает работу firewall, NAT или разделение гостей. При ошибке чтения агент сохраняет остальные показатели и сообщает `NETWORK_INVENTORY_UNAVAILABLE`; допуск машин остаётся закрытым.
 
-Для первого узла выбираем отдельный сегмент без физического uplink на каждый Runtime в режиме `ISOLATED` и один такой сегмент на Environment в режиме `GROUP_LAN`. Proxmox поддерживает отдельные Linux bridges и [SDN Simple VNets](https://pve.proxmox.com/pve-docs/pve-admin-guide.pdf); конкретный механизм создания и удаления закрепляется после теста на узле. Интернет и доступ guacd к гостю проходят через отдельную контролируемую маршрутизирующую границу, которая сначала запрещает management, tailnet и другие сегменты. Это проект реализации, пока не подтверждённые правила. До пакетного теста root-гостя и проверки правил после перезагрузки `NETWORK_AND_GATEWAY_NOT_VERIFIED` остаётся блокировкой admission.
+01.10.2026 подтверждены Proxmox VE 9.2.20, `iptables` legacy, IPv4 forwarding включён и IPv6 forwarding выключен. Обе службы firewall имеют состояние systemd `active`, но `pve-firewall status` показывает `disabled/running`; в настройках datacenter и node нет включающих параметров, а `nft list tables` не вывел таблиц. У действующих `INPUT` и `FORWARD` политика `ACCEPT`; `POSTROUTING` не содержит NAT для учебной подсети. Это исправляет прежнее предположение о действующих `post-up` правилах: текущая конфигурация `vmbr1` не является безопасным учебным шлюзом. Результат сохранён без адресов и секретов.
+
+Проверенные read-only команды для повторения после reboot или изменения настроек:
+
+```bash
+pveversion
+iptables -V
+pve-firewall status
+pvesh get /cluster/firewall/options --output-format json
+pvesh get "/nodes/$(hostname -s)/firewall/options" --output-format json
+nft list tables
+sysctl net.ipv4.ip_forward net.ipv6.conf.all.forwarding
+iptables -S INPUT
+iptables -S FORWARD
+iptables -t nat -S POSTROUTING
+ip -4 route
+```
+
+Для первого узла выбираем отдельный Linux bridge без физического uplink на каждый Runtime в режиме `ISOLATED` и один такой bridge на Environment в режиме `GROUP_LAN`. Новые имена принадлежат только Lab Manager; существующие management bridge и Tailscale остаются вне его владения. Отдельная таблица nftables Lab Manager должна по умолчанию запрещать трафик учебных сегментов, затем разрешать только нужный Guacamole-доступ и, если выбран профиль с Интернетом, выход через физический uplink после запрета инфраструктурных адресов. Проверка guest spoofing и IPv6 обязательна до запуска. Это проект реализации, не применённые правила. [Штатный legacy `pve-firewall` игнорирует VNet/FORWARD правила](https://github.com/proxmox/pve-docs/blob/master/pve-firewall.adoc), поэтому их включение не служит доказательством изоляции. До пакетного теста root-гостя и проверки после перезагрузки `NETWORK_AND_GATEWAY_NOT_VERIFIED` остаётся блокировкой admission.
 
 26.09.2026 пользователь сообщил о работающем Headscale/Tailscale между VPS и Proxmox. Он заменяет предложенный ниже самостоятельно настраиваемый WireGuard-туннель. Второй туннель и настройка `PersistentKeepalive` вручную не требуются в плане этой установки. Необходимо получить адреса обоих участников, проверить правила доступа и маршрут к будущему Guacamole gateway. Подключение host Proxmox само по себе не подтверждает доступность инфраструктурной VM. Студенты не получают доступ к инфраструктурной tailnet; запрет гостям обращаться к management сохраняется.
 
