@@ -20,6 +20,8 @@ Capabilities на `StoragePool`: supported runtime kinds, image formats, full/li
 
 Для LVM-thin блоки выделяются по мере записи; логический размер томов может превышать физическое место. Он поддерживает snapshots/clones, но является локальным storage, не общим между узлами. Это свойства backend, а не разрешение Lab Manager переподписывать диски. [Официальная документация Proxmox LVM-thin](https://github.com/proxmox/pve-docs/blob/master/pve-storage-lvmthin.adoc).
 
+Lab Manager выбирает хранилище по Proxmox storage ID, а Proxmox сопоставляет его с VG и thin pool. Отдельная ручная привязка PV/VG UUID для admission не требуется. Агент может показывать UUID как диагностику изменения тома. Это не заменяет проверку доступности storage, thin metadata, свободного места и дисковых обязательств.
+
 Окончательный выбор между LVM-thin, ZFS и file-based storage требует инвентаризации дисков, RAID, существующей разметки, объёма, Proxmox version и требований восстановления. До этого нельзя записывать production commands форматирования/переразметки или обещать одинаковую snapshot semantics для всех backend.
 
 ## 3. Три независимых вида учёта

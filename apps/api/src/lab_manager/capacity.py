@@ -70,7 +70,6 @@ class StorageObservation:
     active: bool
     is_thin: bool
     commitments_reconciled: bool
-    physical_backing_reconciled: bool
     external_committed_bytes: int = 0
 
 
@@ -184,8 +183,6 @@ def assess_capacity(
             reasons.append("STORAGE_INSUFFICIENT")
     if not storage.commitments_reconciled:
         reasons.append("DISK_COMMITMENTS_UNKNOWN")
-    if not storage.physical_backing_reconciled:
-        reasons.append("STORAGE_BACKING_UNKNOWN")
     if storage.is_thin and (
         storage.thin_metadata_percent is None
         or not 0 <= storage.thin_metadata_percent < policy.thin_metadata_limit_percent

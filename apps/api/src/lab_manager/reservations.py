@@ -62,7 +62,6 @@ def node_capacity(row, storage_name, now):
             active=item["active"],
             is_thin=backend == "lvmthin",
             commitments_reconciled=item["commitments_reconciled"] is True,
-            physical_backing_reconciled=item["physical_backing_reconciled"] is True,
             external_committed_bytes=unsigned(item["external_committed_bytes"]),
         )
         fresh = (

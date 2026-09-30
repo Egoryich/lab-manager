@@ -46,7 +46,6 @@ async def setup(app, teacher_ids):
                     "available_bytes": 100 * GIB,
                     "thin_metadata_percent": 0.5,
                     "commitments_reconciled": True,
-                    "physical_backing_reconciled": True,
                     "external_committed_bytes": 10 * GIB,
                 }
             ],
