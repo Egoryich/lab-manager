@@ -102,3 +102,22 @@ cmp -s /usr/local/lib/lab-manager/update-vps.py \
 systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
 systemctl list-timers --all lab-manager-update.timer --no-pager
 ```
+
+### Подтверждённая автоматическая миграция resource ledger
+
+Пользователь подтвердил установку коммита `8ee4d60f59a9fad60ec0e6bb45921685a2896426` после [успешного CI](https://github.com/Egoryich/lab-manager/actions/runs/36680903243). Сначала timer ожидал публикации образов, затем журнал показал `Verified release: ...; migration=True` и `Migrated and updated application to ...`. В `state.json` активен тот же SHA, PostgreSQL показывает `0006_ledger`, systemd — `Result=success`, `ExecMainStatus=0`. Публичная готовность в этой проверке не вызывалась; локальный `curl` был последней командой блока и её вывод пользователь не прислал. Запуск учебных гостей этим результатом не подтверждён.
+
+Повторяемая проверка миграционного выпуска на VPS, без вывода секретов и адресов:
+
+```bash
+set -euo pipefail
+cd /opt/lab-manager/repo
+systemctl start lab-manager-update.service
+python3 -c 'import json; print(json.load(open("/opt/lab-manager/update-state/state.json"))["active_sha"])'
+docker compose --env-file .env.vps -f infra/vps/compose.yml \
+  exec -T postgres psql -U lab -d lab -Atc \
+  'SELECT version_num FROM alembic_version' </dev/null
+systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
+journalctl -u lab-manager-update.service -n 12 --no-pager
+curl --fail http://127.0.0.1:18000/api/health/ready
+```
