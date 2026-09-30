@@ -495,3 +495,28 @@ assert s["admission_ready"] is False
 print("LVM UUIDs present; admission remains disabled")
 '
 ```
+
+### Переключение на 0.7.0 подтверждено
+
+На Proxmox проверены версии старого и нового wheel, совпадение всех установленных systemd units с выпуском и контрольные суммы файлов. Затем таймер был остановлен, символьная ссылка `current` переключена на новый выпуск, root-задача создала снимок, непривилегированный агент прочитал его, сервис и таймер были запущены. Пользователь подтвердил путь активного выпуска 0.7.0, `Result=success`, `ExecMainStatus=0` и `admission_ready=false`. Скрипт имел обработчик отката к предыдущему выпуску при ошибке.
+
+Повторяемая проверка после переключения (не раскрывает UUID):
+
+```bash
+readlink -f /opt/lab-manager-node/current
+systemctl is-active lab-node-agent.service lab-node-storage-snapshot.timer
+systemctl show --no-pager lab-node-storage-snapshot.service \
+  -p Result -p ExecMainStatus
+runuser -u lab-node-agent -- \
+  /opt/lab-manager-node/current/venv/bin/python -c '
+from lab_node_agent.host_storage import read_snapshot
+s = read_snapshot()
+assert all(p["backing"]["vg_uuid"] and
+           all(pv["pv_uuid"] for pv in p["backing"]["physical_volumes"])
+           for p in s["thin_pools"])
+assert s["admission_ready"] is False
+print("LVM UUIDs present; admission remains disabled")
+'
+```
+
+Перед включением создания машин отдельно нужны закрепление допустимых PV/VG в политике, сверка владения томами и ресурсов, проверка сети и шлюза. Наличие UUID само по себе не снимает ограничений.
