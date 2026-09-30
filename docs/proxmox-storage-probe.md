@@ -22,6 +22,33 @@ python3 -m venv "$stage/venv" </dev/null
 
 Пользователь запустил wheel выпуска `bbd5e3c7120ac0fe68db7495432706b957560297` отдельно от службы. Он подтвердил внешний SHA256 файла `SHA256SUMS`, затем проверку всех четырёх release assets, установку wheel 0.3.0 в отдельный venv и `active` у прежней службы. Сводка локального read-only probe показала:
 
+Обобщённая последовательность успешной подготовки (адрес релиза, SHA и ожидаемый хеш manifest брать из проверенного CI выпуска; секреты и адреса серверов не нужны):
+
+```bash
+set -euo pipefail
+umask 077
+release='<verified-full-sha>'
+release_url='<trusted-release-url>'
+manifest_sha256='<verified-manifest-sha256>'
+stage="/opt/lab-manager-node/releases/$release"
+test ! -e "$stage"
+install -d -m 0700 "$stage"
+cd "$stage"
+for asset in lab_node_agent-0.3.0-py3-none-any.whl \
+             lab-node-agent.service node-pki.py SHA256SUMS; do
+  curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+    --proto '=https' --proto-redir '=https' -o "$asset" \
+    "$release_url/$asset"
+done
+printf '%s  %s\n' "$manifest_sha256" SHA256SUMS | sha256sum --check --strict
+sha256sum --check --strict SHA256SUMS
+python3 -m venv "$stage/venv" </dev/null
+"$stage/venv/bin/python" -m pip --disable-pip-version-check install \
+  --no-index --no-deps "$stage/lab_node_agent-0.3.0-py3-none-any.whl" </dev/null
+"$stage/venv/bin/python" -m lab_node_agent.host_storage
+systemctl is-active lab-node-agent.service
+```
+
 | Storage | VG / thin pool | Pool bytes | Data | Metadata | Найдено томов |
 | --- | --- | ---: | ---: | ---: | ---: |
 | `local-lvm` | `pve` / `data` | 67 641 540 608 | 0.0% | 1.6% | 0 |
