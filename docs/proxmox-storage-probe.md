@@ -470,7 +470,7 @@ vgs --reportformat json --units b --nosuffix \
   -o vg_name,vg_uuid,vg_size,vg_free,pv_count
 ```
 
-В подготовленном wheel 0.7.0 root-задача добавляет UUID в постоянный снимок и отклоняет отсутствующие, неверные и повторные UUID. Это позволит позднее привязать storage policy к устойчивой идентичности PV/VG и обнаруживать подмену диска после перезагрузки. Пока UUID используются только для диагностики: `physical_backing_reconciled=false` и `admission_ready=false`; CPU/RAM/диск не резервируются по этому наблюдению.
+В подготовленном wheel 0.7.0 root-задача добавляет UUID в постоянный снимок и отклоняет отсутствующие, неверные и повторные UUID. Это диагностический признак изменения LVM-томов. Для обычных операций Lab Manager использует имя хранилища Proxmox и Proxmox API; отдельная ручная привязка учебного storage к UUID не требуется. Пока UUID используются только для диагностики: `physical_backing_reconciled=false` и `admission_ready=false`; CPU/RAM/диск не резервируются по этому наблюдению.
 
 ### Проверенная подготовка wheel 0.7.0
 
@@ -519,4 +519,36 @@ print("LVM UUIDs present; admission remains disabled")
 '
 ```
 
-Перед включением создания машин отдельно нужны закрепление допустимых PV/VG в политике, сверка владения томами и ресурсов, проверка сети и шлюза. Наличие UUID само по себе не снимает ограничений.
+Перед включением создания машин нужны выбор допустимого Proxmox storage по его имени, сверка дисковых обязательств и ресурсов, проверка сети и шлюза. UUID можно использовать для предупреждения администратора о неожиданной замене или пересоздании LVM-тома, но не как обязательную ручную настройку для преподавателя. Наличие UUID само по себе не снимает ограничений.
+
+### Периодический сбор и доставка UUID на VPS подтверждены
+
+После переключения на 0.7.0 таймер показал следующий запуск и три последовательных успешных oneshot-запуска примерно через 50 секунд. `Result=success`, `ExecMainStatus=0`. VPS worker по mTLS получил новый снимок обоих thin pool; у каждого есть VG UUID и PV UUID. В переданном снимке `admission_ready=false`. Значения UUID в журнал не записываются.
+
+Проверенные команды без адресов и секретов:
+
+```bash
+# Proxmox
+systemctl list-timers --all lab-node-storage-snapshot.timer --no-pager
+systemctl show --no-pager lab-node-storage-snapshot.service \
+  -p Result -p ExecMainStatus
+journalctl -u lab-node-storage-snapshot.service -n 9 --no-pager
+
+# VPS, из каталога приложения
+docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
+  /app/.venv/bin/python -c '
+from lab_manager.node_transport import load_endpoints, fetch
+d, _ = fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0])
+s = d["sample"]
+pools = {p["storage"]: p for p in s["local_thin_pools"]}
+assert {"local-lvm", "student-lvm"} <= pools.keys()
+for name in ("local-lvm", "student-lvm"):
+    backing = pools[name]["backing"]
+    assert backing["vg_uuid"]
+    assert all(pv["pv_uuid"] for pv in backing["physical_volumes"])
+assert s["admission_ready"] is False
+print("Снимок:", s["sample_finished_at"])
+print("Пулы с UUID:", ", ".join(sorted(pools)))
+print("Допуск машин:", s["admission_ready"])
+'
+```
