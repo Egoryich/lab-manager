@@ -45,6 +45,17 @@ curl --fail "https://${LAB_DOMAIN:?Set LAB_DOMAIN first}/api/health/ready"
 
 Сервис имеет тип oneshot, поэтому `inactive (dead)` после успешного выполнения нормален; результат смотрите через `systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus`. Timer должен быть активен.
 
+Если в журнале `Less than 1.5 GiB free; refusing image download`, текущий выпуск остаётся рабочим: updater не начинает загрузку нового образа. Проверить причину и место можно без удаления данных:
+
+```bash
+df -h /
+docker system df -v
+du -sh /var/lib/docker /opt/lab-manager/update-state /var/log/journal 2>/dev/null
+test -e /opt/lab-manager/update-state/pending.json && echo pending || echo no-pending
+```
+
+После увеличения диска сначала убедитесь, что файловая система `/` тоже выросла и свободно более 1.5 GiB, затем запустите `systemctl start lab-manager-update.service` и проверьте `Result`, `ExecMainStatus`, активный SHA и HTTPS readiness. Не очищайте Docker-тома и образы вслепую: среди старых образов могут быть нужны для возврата к прежнему выпуску. На VPS 01.10.2026 остановка по этому порогу и отсутствие pending подтверждены журналом. После расширения диска свободно стало 6.41 GiB; обновление до `030f5a798c17198ac759fd8aef71ee2f9e20ea5a` прошло с `Result=success`, `ExecMainStatus=0` и публичным ответом readiness. Раздел `/` вырос до 14 GiB, свободно 6.5 GiB. Удаления образов не потребовалось.
+
 ## Если после установки нет timer и журнал пуст
 
 В первом установщике запуск через `git show … | bash` мог прерваться после `Verified compatible release`: неинтерактивный дочерний Docker-процесс наследовал stdin и забирал оставшиеся команды shell. Исправлено закрытием stdin дочерних процессов и запуском установщика из файла. Проверка `Verified compatible release` сама по себе не подтверждает установку timer. Повторите установку исправленной версии, сохранив checkout и `.env.vps`; приложение и данные переустанавливать не нужно. Общая диагностика: [единый гайд](deployment-guide.md).
