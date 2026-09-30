@@ -133,3 +133,20 @@ docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
   /app/.venv/bin/python -c \
   'from lab_manager.node_transport import load_endpoints,fetch; d,_=fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0]); s=d["sample"]; print([(p["storage"],len(p["volumes"])) for p in s.get("local_thin_pools",[])],s["admission_ready"])'
 ```
+
+### Первичная проверка физических PV/VG
+
+Пользователь выполнил read-only `pvs` и `vgs` в JSON. `student-lvm` имеет один PV `/dev/sda` размером 500 103 643 136 байт и 125 829 120 байт свободного **невыделенного места VG**. `pve` имеет один PV `/dev/sdb3` размером 118 107 406 336 байт и 9 663 676 416 байт свободного места VG. Ранее подтверждённый thin pool `student-lvm` имеет размер 489 970 204 672 байта. Свободные 125 МБ VG **не являются** свободным местом внутри thin pool и не должны использоваться для расчёта вместимости учебных машин.
+
+В присланном выводе команда `pvesm config student-lvm` завершилась ошибкой `unknown command`; она не меняла конфигурацию. Эта команда была ошибочно предложена в чате. По [документации Proxmox](https://pve.proxmox.com/pve-docs/pvesm.1.html) конфигурация storage хранится в `/etc/pve/storage.cfg`, а [`pvesh`](https://github.com/proxmox/pve-docs/blob/master/pvesh.adoc) даёт доступ к API. Следующая read-only проверка должна использовать `pvesh get /storage --output-format json` и выводить только поля целевого storage; её результат на этом сервере ещё не подтверждён.
+
+Подтверждённые команды без серийных номеров и секретов:
+
+```bash
+pvs --reportformat json --units b --nosuffix \
+  -o pv_name,vg_name,pv_size,pv_free
+vgs --reportformat json --units b --nosuffix \
+  -o vg_name,vg_size,vg_free,pv_count
+```
+
+Один PV на VG пока не доказывает пригодность storage для admission: остаются сверка устройства и thin pool, всех guest/snapshot-томов и постоянных обязательств Lab Manager. `physical_backing_reconciled` и `commitments_reconciled` остаются ложными.
