@@ -262,3 +262,36 @@ systemctl is-active --quiet lab-node-storage-snapshot.timer
 trap - EXIT
 systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
 ```
+
+### Повторный запуск и доставка на VPS подтверждены
+
+После переключения список таймеров показал следующий запуск через 15 секунд и последний успешный запуск 34 секунды назад. Журнал содержал три последовательных успешных oneshot-запуска примерно через 50 секунд; `Result=success`, `ExecMainStatus=0`. VPS worker по mTLS получил `backing` для обоих пулов: `local-lvm` на `/dev/sdb3`, `student-lvm` на `/dev/sda`. Для обоих `physical_backing_reconciled=false`, в целом `admission_ready=false`. Это подтверждает регулярную доставку read-only диагностики; безопасный допуск к созданию машин ещё не реализован.
+
+Проверенные команды без адресов и секретов:
+
+```bash
+# Proxmox
+systemctl list-timers --all lab-node-storage-snapshot.timer --no-pager
+systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
+journalctl -u lab-node-storage-snapshot.service -n 9 --no-pager
+
+# VPS, из каталога приложения
+docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
+  /app/.venv/bin/python -c '
+import json
+from lab_manager.node_transport import load_endpoints, fetch
+d, _ = fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0])
+s = d["sample"]
+print(json.dumps({
+    "pools": [
+        {
+            "storage": p["storage"],
+            "devices": [v["name"] for v in p["backing"]["physical_volumes"]],
+            "reconciled": p["backing"]["physical_backing_reconciled"],
+        }
+        for p in s["local_thin_pools"]
+    ],
+    "admission_ready": s["admission_ready"],
+}, ensure_ascii=False))
+'
+```
