@@ -456,3 +456,18 @@ print(json.dumps({
 }, ensure_ascii=False))
 '
 ```
+
+## Устойчивые идентификаторы LVM (wheel 0.7.0)
+
+Пользователь подтвердил read-only `pvs` и `vgs` в JSON: два PV на двух VG, у каждого есть отдельный LVM UUID. Текущие пути PV совпали с наблюдаемыми `/dev/sda` и `/dev/sdb3`, а размеры и свободное невыделенное место VG остались прежними. UUID не публикуются в этом руководстве: важно само наличие и уникальность идентификаторов, а не значения конкретной установки.
+
+Проверенные команды без адресов и секретов:
+
+```bash
+pvs --reportformat json --units b --nosuffix \
+  -o pv_name,pv_uuid,vg_name,pv_size,pv_free
+vgs --reportformat json --units b --nosuffix \
+  -o vg_name,vg_uuid,vg_size,vg_free,pv_count
+```
+
+В подготовленном wheel 0.7.0 root-задача добавляет UUID в постоянный снимок и отклоняет отсутствующие, неверные и повторные UUID. Это позволит позднее привязать storage policy к устойчивой идентичности PV/VG и обнаруживать подмену диска после перезагрузки. Пока UUID используются только для диагностики: `physical_backing_reconciled=false` и `admission_ready=false`; CPU/RAM/диск не резервируются по этому наблюдению.

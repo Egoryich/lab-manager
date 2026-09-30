@@ -37,7 +37,7 @@ PVS = (
     "b",
     "--nosuffix",
     "-o",
-    "pv_name,vg_name,pv_size,pv_free",
+    "pv_name,pv_uuid,vg_name,pv_size,pv_free",
 )
 VGS = (
     "vgs",
@@ -47,7 +47,7 @@ VGS = (
     "b",
     "--nosuffix",
     "-o",
-    "vg_name,vg_size,vg_free,pv_count",
+    "vg_name,vg_uuid,vg_size,vg_free,pv_count",
 )
 LSBLK = (
     "lsblk",
@@ -61,6 +61,7 @@ FINDMNT = ("findmnt", "--json", "--mountpoint", "/", "--output", "SOURCE,TARGET,
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}")
 LV_IDENTIFIER = re.compile(r"\[?[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\]?")
 DEVICE_PATH = re.compile(r"/dev/[A-Za-z0-9_.+/:=-]{1,255}")
+LVM_UUID = re.compile(r"[A-Za-z0-9]{6}(?:-[A-Za-z0-9]{4}){5}-[A-Za-z0-9]{6}")
 VOLUME_OWNER = re.compile(r"(?:vm|base)-(\d+)-.+")
 MAX_INPUT = 2 * 1024 * 1024
 SNAPSHOT = Path("/var/lib/lab-manager-node/storage.json")
@@ -90,6 +91,12 @@ def device_path(value):
         or any(part in ("", ".", "..") for part in value[5:].split("/"))
     ):
         raise StorageProbeError("INVALID_PV_NAME")
+    return value
+
+
+def lvm_uuid(value):
+    if not isinstance(value, str) or not LVM_UUID.fullmatch(value):
+        raise StorageProbeError("INVALID_LVM_UUID")
     return value
 
 
@@ -165,33 +172,43 @@ def parse_lvs_report(raw):
 def summarize_backing(pools, pv_rows, vg_rows):
     """Correlate reported LVM objects without claiming physical admission."""
     groups = {}
+    seen_vg_uuids = set()
     for row in vg_rows:
         name = identifier(row.get("vg_name"))
         if name in groups:
             raise StorageProbeError("DUPLICATE_VG")
+        vg_uuid = lvm_uuid(row.get("vg_uuid"))
+        if vg_uuid in seen_vg_uuids:
+            raise StorageProbeError("DUPLICATE_VG_UUID")
+        seen_vg_uuids.add(vg_uuid)
         size = nonnegative_integer(row.get("vg_size"))
         free = nonnegative_integer(row.get("vg_free"))
         count = nonnegative_integer(row.get("pv_count"))
         if size <= 0 or free > size or count < 1:
             raise StorageProbeError("VG_REPORT_INVALID")
-        groups[name] = {"size": size, "free": free, "pv_count": count}
+        groups[name] = {"uuid": vg_uuid, "size": size, "free": free, "pv_count": count}
     physical = {}
-    seen = set()
+    seen_names = set()
+    seen_pv_uuids = set()
     for row in pv_rows:
         name = device_path(row.get("pv_name"))
+        pv_uuid = lvm_uuid(row.get("pv_uuid"))
+        if name in seen_names:
+            raise StorageProbeError("DUPLICATE_PV")
+        if pv_uuid in seen_pv_uuids:
+            raise StorageProbeError("DUPLICATE_PV_UUID")
+        seen_names.add(name)
+        seen_pv_uuids.add(pv_uuid)
         vg_raw = row.get("vg_name")
         if not vg_raw:
             continue
         vg = identifier(vg_raw)
-        if name in seen:
-            raise StorageProbeError("DUPLICATE_PV")
-        seen.add(name)
         size = nonnegative_integer(row.get("pv_size"))
         free = nonnegative_integer(row.get("pv_free"))
         if size <= 0 or free > size:
             raise StorageProbeError("PV_REPORT_INVALID")
         physical.setdefault(vg, []).append(
-            {"name": name, "size_bytes": size, "unallocated_bytes": free}
+            {"name": name, "pv_uuid": pv_uuid, "size_bytes": size, "unallocated_bytes": free}
         )
     for pool in pools:
         vgname = pool["vgname"]
@@ -206,6 +223,7 @@ def summarize_backing(pools, pv_rows, vg_rows):
         ):
             raise StorageProbeError("LVM_BACKING_MISMATCH")
         pool["backing"] = {
+            "vg_uuid": group["uuid"],
             "vg_size_bytes": group["size"],
             "vg_unallocated_bytes": group["free"],
             "physical_volumes": devices,
@@ -381,6 +399,8 @@ def read_snapshot(path=SNAPSHOT, now=None):
         pools = report["thin_pools"]
         if not isinstance(pools, list) or len(pools) > 128:
             raise ValueError("Invalid pools")
+        seen_vg_uuids = set()
+        seen_pv_uuids = set()
         for pool in pools:
             if not isinstance(pool, dict) or pool.get("ownership_reconciled") is not False:
                 raise ValueError("Invalid pool")
@@ -401,6 +421,12 @@ def read_snapshot(path=SNAPSHOT, now=None):
                     raise ValueError("Invalid backing")
                 nonnegative_integer(backing["vg_size_bytes"])
                 nonnegative_integer(backing["vg_unallocated_bytes"])
+                has_uuid = "vg_uuid" in backing
+                if has_uuid:
+                    vg_uuid = lvm_uuid(backing["vg_uuid"])
+                    if vg_uuid in seen_vg_uuids:
+                        raise ValueError("Duplicate VG UUID")
+                    seen_vg_uuids.add(vg_uuid)
                 if (
                     not backing["physical_volumes"]
                     or backing["vg_size_bytes"] < pool["pool_size_bytes"]
@@ -409,6 +435,13 @@ def read_snapshot(path=SNAPSHOT, now=None):
                 seen_devices = set()
                 for device in backing["physical_volumes"]:
                     device_path(device["name"])
+                    if ("pv_uuid" in device) != has_uuid:
+                        raise ValueError("Incomplete LVM UUIDs")
+                    if has_uuid:
+                        pv_uuid = lvm_uuid(device["pv_uuid"])
+                        if pv_uuid in seen_pv_uuids:
+                            raise ValueError("Duplicate PV UUID")
+                        seen_pv_uuids.add(pv_uuid)
                     nonnegative_integer(device["size_bytes"])
                     nonnegative_integer(device["unallocated_bytes"])
                     if device["name"] in seen_devices:

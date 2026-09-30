@@ -88,16 +88,30 @@ ROWS = [
 PVS_ROWS = [
     {
         "pv_name": "/dev/sda",
+        "pv_uuid": "AAAAAA-1111-2222-3333-4444-5555-666666",
         "vg_name": "student-lvm",
         "pv_size": "500103643136",
         "pv_free": "125829120",
     },
-    {"pv_name": "/dev/sdb3", "vg_name": "pve", "pv_size": "118107406336", "pv_free": "9663676416"},
+    {
+        "pv_name": "/dev/sdb3",
+        "pv_uuid": "BBBBBB-1111-2222-3333-4444-5555-666666",
+        "vg_name": "pve",
+        "pv_size": "118107406336",
+        "pv_free": "9663676416",
+    },
 ]
 VGS_ROWS = [
-    {"vg_name": "pve", "vg_size": "118107406336", "vg_free": "9663676416", "pv_count": "1"},
+    {
+        "vg_name": "pve",
+        "vg_uuid": "CCCCCC-1111-2222-3333-4444-5555-666666",
+        "vg_size": "118107406336",
+        "vg_free": "9663676416",
+        "pv_count": "1",
+    },
     {
         "vg_name": "student-lvm",
+        "vg_uuid": "DDDDDD-1111-2222-3333-4444-5555-666666",
         "vg_size": "500103643136",
         "vg_free": "125829120",
         "pv_count": "1",
@@ -192,14 +206,35 @@ def test_pv_vg_mapping_is_observed_but_not_admission_evidence():
     pools = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
     student = pools[1]
     assert student["backing"]["physical_volumes"] == [
-        {"name": "/dev/sda", "size_bytes": 500103643136, "unallocated_bytes": 125829120}
+        {
+            "name": "/dev/sda",
+            "pv_uuid": "AAAAAA-1111-2222-3333-4444-5555-666666",
+            "size_bytes": 500103643136,
+            "unallocated_bytes": 125829120,
+        }
     ]
+    assert student["backing"]["vg_uuid"] == "DDDDDD-1111-2222-3333-4444-5555-666666"
     assert student["backing"]["vg_unallocated_bytes"] == 125829120
     assert student["backing"]["physical_backing_reconciled"] is False
     bad = [dict(row) for row in VGS_ROWS]
     bad[1]["pv_count"] = "2"
     with pytest.raises(StorageProbeError, match="LVM_BACKING_MISMATCH"):
         summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, bad)
+    duplicate_pv_uuid = [dict(row) for row in PVS_ROWS]
+    duplicate_pv_uuid[1]["pv_uuid"] = duplicate_pv_uuid[0]["pv_uuid"]
+    with pytest.raises(StorageProbeError, match="DUPLICATE_PV_UUID"):
+        summarize_backing(summarize(CONFIG, ROWS), duplicate_pv_uuid, VGS_ROWS)
+    duplicate_vg_uuid = [dict(row) for row in VGS_ROWS]
+    duplicate_vg_uuid[1]["vg_uuid"] = duplicate_vg_uuid[0]["vg_uuid"]
+    with pytest.raises(StorageProbeError, match="DUPLICATE_VG_UUID"):
+        summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, duplicate_vg_uuid)
+    changed_path = [dict(row) for row in PVS_ROWS]
+    changed_path[0]["pv_name"] = "/dev/sdc"
+    moved = summarize_backing(summarize(CONFIG, ROWS), changed_path, VGS_ROWS)
+    assert (
+        moved[1]["backing"]["physical_volumes"][0]["pv_uuid"]
+        == student["backing"]["physical_volumes"][0]["pv_uuid"]
+    )
 
 
 def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
@@ -293,6 +328,11 @@ def test_snapshot_rejects_untrusted_file_and_expired_data(tmp_path, monkeypatch)
     topology = read_snapshot(path)["thin_pools"][1]["backing"]["physical_volumes"][0]["topology"]
     assert topology["shares_system_disk"] is False
     report["thin_pools"][0]["backing"]["physical_volumes"][0]["topology"]["whole_disk"] = True
+    path.write_text(json.dumps(report))
+    with pytest.raises(StorageProbeError, match="SNAPSHOT_INVALID"):
+        read_snapshot(path)
+    report["thin_pools"] = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
+    report["thin_pools"][1]["backing"].pop("vg_uuid")
     path.write_text(json.dumps(report))
     with pytest.raises(StorageProbeError, match="SNAPSHOT_INVALID"):
         read_snapshot(path)
