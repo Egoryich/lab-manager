@@ -15,6 +15,7 @@ import uuid
 from pathlib import Path
 
 from lab_node_agent.cli import read_credentials
+from lab_node_agent.host_storage import StorageProbeError, read_snapshot
 from lab_node_agent.inventory import collect
 from lab_node_agent.proxmox import ProxmoxConfig, ProxmoxReader
 
@@ -36,7 +37,12 @@ class SnapshotService:
 
     async def refresh(self):
         try:
-            sample = await asyncio.to_thread(collect, self.reader)
+            try:
+                local_storage = await asyncio.to_thread(read_snapshot)
+            except StorageProbeError as error:
+                local_storage = None
+                logger.info("local_storage_unavailable code=%s", error)
+            sample = await asyncio.to_thread(collect, self.reader, local_storage)
             body = json.dumps(
                 {"node_id": self.node_id, "agent_boot_id": self.boot_id, "sample": sample},
                 ensure_ascii=False,

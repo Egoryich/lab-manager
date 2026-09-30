@@ -1,4 +1,7 @@
 import json
+import os
+import stat
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +10,7 @@ from lab_node_agent.host_storage import (
     StorageProbeError,
     collect_local,
     parse_lvs_report,
+    read_snapshot,
     storage_pools,
     summarize,
 )
@@ -143,3 +147,44 @@ def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
     )
     with pytest.raises(StorageProbeError, match="^LVM_COLLECTION_FAILED$"):
         collect_local()
+
+
+def test_snapshot_rejects_untrusted_file_and_expired_data(tmp_path, monkeypatch):
+    if not hasattr(os, "O_NOFOLLOW"):
+        pytest.skip("Linux file ownership check")
+    from lab_node_agent import host_storage
+
+    path = tmp_path / "storage.json"
+    report = {
+        "schema_version": 1,
+        "sample_finished_at": datetime.now(UTC).isoformat(),
+        "thin_pools": summarize(CONFIG, ROWS),
+        "admission_ready": False,
+    }
+    path.write_text(json.dumps(report))
+    real_fstat = os.fstat
+    monkeypatch.setattr(
+        host_storage.os,
+        "fstat",
+        lambda fd: SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o640,
+            st_uid=0,
+            st_gid=os.getegid(),
+            st_size=real_fstat(fd).st_size,
+        ),
+    )
+    assert read_snapshot(path)["thin_pools"][1]["volumes"][0]["ownership"] == "UNVERIFIED"
+    with pytest.raises(StorageProbeError, match="SNAPSHOT_STALE"):
+        read_snapshot(path, now=datetime.now(UTC) + timedelta(minutes=3))
+    monkeypatch.setattr(
+        host_storage.os,
+        "fstat",
+        lambda fd: SimpleNamespace(
+            st_mode=stat.S_IFREG | 0o666,
+            st_uid=0,
+            st_gid=os.getegid(),
+            st_size=real_fstat(fd).st_size,
+        ),
+    )
+    with pytest.raises(StorageProbeError, match="SNAPSHOT_UNTRUSTED"):
+        read_snapshot(path)

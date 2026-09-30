@@ -22,9 +22,9 @@ jobs:
           /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
           /tmp/lab-agent-package-test/bin/lab-node-agent --help
           /tmp/lab-agent-package-test/bin/python -m lab_node_agent.service --help
-          cp infra/proxmox/lab-node-agent.service tools/node-pki.py artifacts/node-agent/
+          cp infra/proxmox/lab-node-agent.service infra/proxmox/lab-node-storage-snapshot.service infra/proxmox/lab-node-storage-snapshot.timer tools/node-pki.py artifacts/node-agent/
           cd artifacts/node-agent
-          sha256sum *.whl *.service *.py > SHA256SUMS
+          sha256sum *.whl *.service *.timer *.py > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: node-agent-${{ github.sha }}

@@ -1,0 +1,30 @@
+[Unit]
+Description=Collect local LVM-thin inventory for Lab Manager
+After=pve-cluster.service
+ConditionPathExists=/etc/pve/storage.cfg
+
+[Service]
+Type=oneshot
+User=root
+Group=lab-node-agent
+StateDirectory=lab-manager-node
+StateDirectoryMode=0750
+ExecStart=/opt/lab-manager-node/current/venv/bin/python -m lab_node_agent.host_storage --write-snapshot
+TimeoutStartSec=35
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+TasksMax=16
+MemoryMax=96M
+CPUQuota=25%

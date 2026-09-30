@@ -7,9 +7,11 @@ the mTLS agent does not execute privileged commands or accept probe parameters.
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
-from datetime import UTC, datetime
+import tempfile
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -29,6 +31,8 @@ IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}")
 LV_IDENTIFIER = re.compile(r"\[?[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\]?")
 VOLUME_OWNER = re.compile(r"(?:vm|base)-(\d+)-.+")
 MAX_INPUT = 2 * 1024 * 1024
+SNAPSHOT = Path("/var/lib/lab-manager-node/storage.json")
+MAX_SNAPSHOT_AGE = timedelta(seconds=120)
 
 
 class StorageProbeError(Exception):
@@ -193,10 +197,104 @@ def collect_local():
     }
 
 
+def write_snapshot(report, path=SNAPSHOT):
+    """Publish a root-owned snapshot in an operator-owned runtime directory."""
+    if getattr(os, "geteuid", lambda: -1)() != 0:
+        raise StorageProbeError("ROOT_REQUIRED")
+    directory = path.parent
+    info = directory.stat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        raise StorageProbeError("SNAPSHOT_DIRECTORY_UNSAFE")
+    payload = (json.dumps(report, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
+    if len(payload) > MAX_INPUT:
+        raise StorageProbeError("SNAPSHOT_TOO_LARGE")
+    import grp
+
+    group = grp.getgrnam("lab-node-agent").gr_gid
+    name = None
+    try:
+        fd, name = tempfile.mkstemp(prefix=".storage-", dir=directory)
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload)
+            output.flush()
+            os.fchown(output.fileno(), 0, group)
+            os.fchmod(output.fileno(), 0o640)
+            os.fsync(output.fileno())
+        os.replace(name, path)
+        name = None
+        dir_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        if name is not None:
+            os.unlink(name)
+
+
+def read_snapshot(path=SNAPSHOT, now=None):
+    """Return only a fresh root-owned regular file; any uncertainty is an error."""
+    now = now or datetime.now(UTC)
+    if not all(hasattr(os, name) for name in ("O_NOFOLLOW", "O_NONBLOCK", "getegid")):
+        raise StorageProbeError("SNAPSHOT_UNSUPPORTED_PLATFORM")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != 0
+                or info.st_gid != os.getegid()
+                or info.st_mode & 0o137
+                or info.st_size > MAX_INPUT
+            ):
+                raise StorageProbeError("SNAPSHOT_UNTRUSTED")
+            raw = source.read(MAX_INPUT + 1)
+        report = json.loads(raw)
+        if set(report) != {"schema_version", "sample_finished_at", "thin_pools", "admission_ready"}:
+            raise ValueError("Unexpected snapshot schema")
+        if report["schema_version"] != 1 or report["admission_ready"] is not False:
+            raise ValueError("Unexpected snapshot version")
+        sampled = datetime.fromisoformat(report["sample_finished_at"])
+        age = now - sampled
+        if sampled.tzinfo is None or not -timedelta(seconds=5) <= age <= MAX_SNAPSHOT_AGE:
+            raise StorageProbeError("SNAPSHOT_STALE")
+        pools = report["thin_pools"]
+        if not isinstance(pools, list) or len(pools) > 128:
+            raise ValueError("Invalid pools")
+        for pool in pools:
+            if not isinstance(pool, dict) or pool.get("ownership_reconciled") is not False:
+                raise ValueError("Invalid pool")
+            identifier(pool["storage"])
+            identifier(pool["vgname"])
+            identifier(pool["thinpool"])
+            nonnegative_integer(pool["pool_size_bytes"])
+            percent(pool["data_percent"])
+            percent(pool["metadata_percent"])
+            if not isinstance(pool["volumes"], list) or len(pool["volumes"]) > 10000:
+                raise ValueError("Invalid volumes")
+            for volume in pool["volumes"]:
+                lv_identifier(volume["name"])
+                nonnegative_integer(volume["size_bytes"])
+                if volume.get("ownership") != "UNVERIFIED":
+                    raise ValueError("Invalid ownership")
+        if len({pool["storage"] for pool in pools}) != len(pools):
+            raise ValueError("Duplicate pool")
+        return report
+    except (OSError, UnicodeError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise StorageProbeError("SNAPSHOT_INVALID") from error
+
+
 def main():
     try:
-        print(json.dumps(collect_local(), ensure_ascii=False))
-    except StorageProbeError as error:
+        report = collect_local()
+        if sys.argv[1:] == ["--write-snapshot"]:
+            write_snapshot(report)
+        elif not sys.argv[1:]:
+            print(json.dumps(report, ensure_ascii=False))
+        else:
+            raise StorageProbeError("INVALID_ARGUMENTS")
+    except (StorageProbeError, OSError, KeyError) as error:
         print(json.dumps({"error": str(error)}), file=sys.stderr)
         raise SystemExit(1) from None
 

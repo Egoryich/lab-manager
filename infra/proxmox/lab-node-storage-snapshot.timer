@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Lab Manager local storage inventory
+
+[Timer]
+OnBootSec=45s
+OnUnitInactiveSec=45s
+RandomizedDelaySec=5s
+AccuracySec=5s
+Unit=lab-node-storage-snapshot.service
+
+[Install]
+WantedBy=timers.target

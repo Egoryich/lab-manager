@@ -86,6 +86,32 @@ def test_narrow_token_cannot_present_empty_inventory_as_free_capacity():
         collect(reader)
 
 
+def test_local_storage_metadata_requires_exact_pool_match_and_never_opens_admission():
+    local = {
+        "thin_pools": [
+            {
+                "storage": "student-lvm",
+                "vgname": "student-lvm",
+                "thinpool": "student-lvm",
+                "pool_size_bytes": 456 * 2**30,
+                "data_percent": 1.5,
+                "metadata_percent": 0.39,
+                "volumes": [],
+                "ownership_reconciled": False,
+            }
+        ]
+    }
+    matched = collect(Reader(), local)
+    assert matched["storages"][0]["thin_metadata_percent"] == 0.39
+    assert matched["local_thin_pools"][0]["ownership_reconciled"] is False
+    assert matched["admission_ready"] is False
+    local["thin_pools"][0]["pool_size_bytes"] += 1
+    mismatched = collect(Reader(), local)
+    assert mismatched["storages"][0]["thin_metadata_percent"] is None
+    assert mismatched["local_thin_pools"] == []
+    assert "LOCAL_STORAGE_MISMATCH" in mismatched["limitations"]
+
+
 @pytest.fixture
 def https_pve(tmp_path):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

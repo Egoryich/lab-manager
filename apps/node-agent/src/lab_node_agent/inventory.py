@@ -32,7 +32,7 @@ def label(value):
     return value
 
 
-def collect(reader):
+def collect(reader, local_storage=None):
     started = datetime.now(UTC)
     # Lists are permission-filtered. Refuse a token missing global audit grants.
     permissions = object_value(reader.get("permissions"))
@@ -83,6 +83,33 @@ def collect(reader):
                     "ownership": "UNVERIFIED",
                 }
             )
+    limitations = [
+        "NON_ATOMIC_OBSERVATION",
+        "ACL_FILTERING_POSSIBLE",
+        "DISK_COMMITMENTS_NOT_RECONCILED",
+        "NETWORK_AND_GATEWAY_NOT_VERIFIED",
+    ]
+    local_pools = []
+    if local_storage is None:
+        limitations.append("LOCAL_STORAGE_SNAPSHOT_UNAVAILABLE")
+    else:
+        by_name = {pool["storage"]: pool for pool in local_storage["thin_pools"]}
+        observed = {storage["name"]: storage for storage in storages}
+        if any(
+            name not in observed
+            or observed[name]["backend"] != "lvmthin"
+            or observed[name]["total_bytes"] != pool["pool_size_bytes"]
+            or not observed[name]["active"]
+            for name, pool in by_name.items()
+        ) or any(
+            storage["backend"] == "lvmthin" and storage["name"] not in by_name
+            for storage in storages
+        ):
+            limitations.append("LOCAL_STORAGE_MISMATCH")
+        else:
+            for name, pool in by_name.items():
+                observed[name]["thin_metadata_percent"] = pool["metadata_percent"]
+            local_pools = local_storage["thin_pools"]
     return {
         "protocol_version": 1,
         "snapshot_id": str(uuid.uuid4()),
@@ -101,12 +128,7 @@ def collect(reader):
         },
         "storages": storages,
         "guests": guests,
+        "local_thin_pools": local_pools,
         "admission_ready": False,
-        "limitations": [
-            "NON_ATOMIC_OBSERVATION",
-            "ACL_FILTERING_POSSIBLE",
-            "THIN_METADATA_NOT_COLLECTED",
-            "DISK_COMMITMENTS_NOT_RECONCILED",
-            "NETWORK_AND_GATEWAY_NOT_VERIFIED",
-        ],
+        "limitations": limitations,
     }
