@@ -423,3 +423,36 @@ systemctl is-active --quiet lab-node-storage-snapshot.timer
 trap - EXIT
 systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
 ```
+
+### Периодический сбор 0.6.0 и доставка на VPS подтверждены
+
+После переключения пользователь показал три последовательных успешных запуска oneshot примерно через 50 секунд, запланированный следующий запуск таймера, `Result=success` и `ExecMainStatus=0`. VPS worker по mTLS получил `topology` обоих PV: `local-lvm` — раздел `/dev/sdb3` на системном `/dev/sdb`; `student-lvm` — отдельный целый `/dev/sda`. В переданном снимке `admission_ready=false`. Это подтверждает работающую цепочку локальный read-only сбор → агент → VPS; не подтверждает устойчивость имён `/dev/sd*`, состояние диска или доступный лимит для занятия.
+
+Проверенные команды без адресов и секретов:
+
+```bash
+# Proxmox
+systemctl list-timers --all lab-node-storage-snapshot.timer --no-pager
+systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
+journalctl -u lab-node-storage-snapshot.service -n 9 --no-pager
+
+# VPS, из каталога приложения
+docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
+  /app/.venv/bin/python -c '
+import json
+from lab_manager.node_transport import load_endpoints, fetch
+d, _ = fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0])
+s = d["sample"]
+print(json.dumps({
+    "pools": [
+        {
+            "storage": p["storage"],
+            "pv": [{"name": v["name"], "topology": v["topology"]}
+                   for v in p["backing"]["physical_volumes"]],
+        }
+        for p in s["local_thin_pools"]
+    ],
+    "admission_ready": s["admission_ready"],
+}, ensure_ascii=False))
+'
+```
