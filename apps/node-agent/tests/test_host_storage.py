@@ -102,6 +102,10 @@ def test_missing_pool_or_metadata_fails_instead_of_reporting_free_capacity():
     bad[-2]["metadata_percent"] = ""
     with pytest.raises(StorageProbeError, match="INVALID_LVM_PERCENT"):
         summarize(CONFIG, bad)
+    missing_link = [dict(row) for row in ROWS]
+    missing_link[-1]["pool_lv"] = ""
+    with pytest.raises(StorageProbeError, match="THIN_VOLUME_POOL_UNKNOWN"):
+        summarize(CONFIG, missing_link)
 
 
 def test_duplicate_or_malformed_storage_cannot_be_silently_skipped():

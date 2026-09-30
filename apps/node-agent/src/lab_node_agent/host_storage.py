@@ -131,6 +131,8 @@ def summarize(config, rows):
         if not isinstance(attr, str) or len(attr) < 1:
             raise StorageProbeError("LVM_REPORT_INVALID")
         pool = row.get("pool_lv") or ""
+        if attr[0] == "V" and not pool:
+            raise StorageProbeError("THIN_VOLUME_POOL_UNKNOWN")
         if pool:
             pool = lv_identifier(pool)
             owner = VOLUME_OWNER.fullmatch(lv)
