@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from lab_node_agent.block_topology import add_topology
 from lab_node_agent.host_storage import (
     StorageProbeError,
     collect_local,
@@ -102,6 +103,53 @@ VGS_ROWS = [
         "pv_count": "1",
     },
 ]
+BLOCK_TREE = {
+    "blockdevices": [
+        {
+            "path": "/dev/sda",
+            "type": "disk",
+            "size": 500107862016,
+            "mountpoints": [],
+            "children": [
+                {
+                    "path": "/dev/mapper/student--lvm-student--lvm-tpool",
+                    "type": "lvm",
+                    "size": 489970204672,
+                    "mountpoints": [],
+                },
+                {
+                    "path": "/dev/mapper/student--lvm-student--lvm-tpool",
+                    "type": "lvm",
+                    "size": 489970204672,
+                    "mountpoints": [],
+                },
+            ],
+        },
+        {
+            "path": "/dev/sdb",
+            "type": "disk",
+            "size": 120034123776,
+            "mountpoints": [],
+            "children": [
+                {
+                    "path": "/dev/sdb3",
+                    "type": "part",
+                    "size": 118110552576,
+                    "mountpoints": [],
+                    "children": [
+                        {
+                            "path": "/dev/mapper/pve-root",
+                            "type": "lvm",
+                            "size": 34359738368,
+                            "mountpoints": ["/"],
+                        }
+                    ],
+                }
+            ],
+        },
+    ]
+}
+ROOT_MOUNT = {"filesystems": [{"source": "/dev/mapper/pve-root", "target": "/"}]}
 
 
 def test_pool_mapping_and_virtual_volumes_remain_unverified():
@@ -169,7 +217,11 @@ def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
             host_storage.LVS: ("lv", ROWS),
             host_storage.PVS: ("pv", PVS_ROWS),
             host_storage.VGS: ("vg", VGS_ROWS),
-        }[command]
+        }.get(command, (None, None))
+        if command == host_storage.LSBLK:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(BLOCK_TREE).encode())
+        if command == host_storage.FINDMNT:
+            return SimpleNamespace(returncode=0, stdout=json.dumps(ROOT_MOUNT).encode())
         return SimpleNamespace(
             returncode=0, stdout=json.dumps({"report": [{section: rows}]}).encode()
         )
@@ -178,7 +230,20 @@ def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
     report = collect_local()
     assert report["admission_ready"] is False
     assert report["thin_pools"][1]["volumes"][0]["name"] == "vm-201-disk-0"
-    assert [call[0] for call in calls] == [host_storage.LVS, host_storage.PVS, host_storage.VGS]
+    assert report["thin_pools"][1]["backing"]["physical_volumes"][0]["topology"] == {
+        "type": "disk",
+        "size_bytes": 500107862016,
+        "backing_disks": ["/dev/sda"],
+        "whole_disk": True,
+        "shares_system_disk": False,
+    }
+    assert [call[0] for call in calls] == [
+        host_storage.LVS,
+        host_storage.PVS,
+        host_storage.VGS,
+        host_storage.LSBLK,
+        host_storage.FINDMNT,
+    ]
     assert all(call[1]["timeout"] == 20 for call in calls)
     monkeypatch.setattr(
         host_storage.subprocess,
@@ -219,6 +284,19 @@ def test_snapshot_rejects_untrusted_file_and_expired_data(tmp_path, monkeypatch)
     report["thin_pools"] = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
     path.write_text(json.dumps(report))
     assert read_snapshot(path)["thin_pools"][1]["backing"]["physical_backing_reconciled"] is False
+    report["thin_pools"] = add_topology(
+        summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS),
+        json.dumps(BLOCK_TREE).encode(),
+        json.dumps(ROOT_MOUNT).encode(),
+    )
+    path.write_text(json.dumps(report))
+    topology = read_snapshot(path)["thin_pools"][1]["backing"]["physical_volumes"][0]["topology"]
+    assert topology["shares_system_disk"] is False
+    report["thin_pools"][0]["backing"]["physical_volumes"][0]["topology"]["whole_disk"] = True
+    path.write_text(json.dumps(report))
+    with pytest.raises(StorageProbeError, match="SNAPSHOT_INVALID"):
+        read_snapshot(path)
+    report["thin_pools"] = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
     report["thin_pools"][1]["backing"]["vg_unallocated_bytes"] += 1
     path.write_text(json.dumps(report))
     with pytest.raises(StorageProbeError, match="SNAPSHOT_INVALID"):

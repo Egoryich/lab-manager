@@ -15,6 +15,8 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from lab_node_agent.block_topology import TopologyError, add_topology
+
 STORAGE_CONFIG = Path("/etc/pve/storage.cfg")
 LVS = (
     "lvs",
@@ -47,6 +49,15 @@ VGS = (
     "-o",
     "vg_name,vg_size,vg_free,pv_count",
 )
+LSBLK = (
+    "lsblk",
+    "--json",
+    "--bytes",
+    "--tree",
+    "--output",
+    "NAME,PATH,TYPE,SIZE,PKNAME,MOUNTPOINTS",
+)
+FINDMNT = ("findmnt", "--json", "--mountpoint", "/", "--output", "SOURCE,TARGET,FSTYPE")
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}")
 LV_IDENTIFIER = re.compile(r"\[?[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\]?")
 DEVICE_PATH = re.compile(r"/dev/[A-Za-z0-9_.+/:=-]{1,255}")
@@ -265,8 +276,14 @@ def collect_local():
         raise StorageProbeError("ROOT_REQUIRED")
     try:
         config = STORAGE_CONFIG.read_text(encoding="utf-8")
-        reports = []
-        for command in (LVS, PVS, VGS):
+    except (OSError, UnicodeError) as error:
+        raise StorageProbeError("LVM_COLLECTION_FAILED") from error
+    reports = []
+    for command in (LVS, PVS, VGS, LSBLK, FINDMNT):
+        failure = (
+            "BLOCK_COLLECTION_FAILED" if command in (LSBLK, FINDMNT) else "LVM_COLLECTION_FAILED"
+        )
+        try:
             run = subprocess.run(
                 command,
                 capture_output=True,
@@ -274,19 +291,27 @@ def collect_local():
                 timeout=20,
                 env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
             )
-            if run.returncode != 0:
-                raise StorageProbeError("LVM_COLLECTION_FAILED")
-            reports.append(run.stdout)
-    except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
-        raise StorageProbeError("LVM_COLLECTION_FAILED") from error
+        except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
+            raise StorageProbeError(failure) from error
+        if run.returncode != 0:
+            raise StorageProbeError(failure)
+        reports.append(run.stdout)
+    try:
+        pools = add_topology(
+            summarize_backing(
+                summarize(config, parse_lvs_report(reports[0])),
+                parse_report(reports[1], "pv"),
+                parse_report(reports[2], "vg"),
+            ),
+            reports[3],
+            reports[4],
+        )
+    except TopologyError as error:
+        raise StorageProbeError(str(error)) from error
     return {
         "schema_version": 1,
         "sample_finished_at": datetime.now(UTC).isoformat(),
-        "thin_pools": summarize_backing(
-            summarize(config, parse_lvs_report(reports[0])),
-            parse_report(reports[1], "pv"),
-            parse_report(reports[2], "vg"),
-        ),
+        "thin_pools": pools,
         "admission_ready": False,
     }
 
@@ -389,6 +414,37 @@ def read_snapshot(path=SNAPSHOT, now=None):
                     if device["name"] in seen_devices:
                         raise ValueError("Duplicate PV")
                     seen_devices.add(device["name"])
+                    topology = device.get("topology")
+                    if topology is not None:
+                        if (
+                            not isinstance(topology, dict)
+                            or set(topology)
+                            != {
+                                "type",
+                                "size_bytes",
+                                "backing_disks",
+                                "whole_disk",
+                                "shares_system_disk",
+                            }
+                            or not isinstance(topology["type"], str)
+                            or not 1 <= len(topology["type"]) <= 32
+                            or type(topology["whole_disk"]) is not bool
+                            or type(topology["shares_system_disk"]) is not bool
+                            or not isinstance(topology["backing_disks"], list)
+                            or not 1 <= len(topology["backing_disks"]) <= 128
+                            or len(set(topology["backing_disks"])) != len(topology["backing_disks"])
+                        ):
+                            raise ValueError("Invalid block topology")
+                        nonnegative_integer(topology["size_bytes"])
+                        if topology["size_bytes"] < device["size_bytes"]:
+                            raise ValueError("Invalid block size")
+                        for disk in topology["backing_disks"]:
+                            device_path(disk)
+                        if topology["whole_disk"] and (
+                            topology["type"] != "disk"
+                            or topology["backing_disks"] != [device["name"]]
+                        ):
+                            raise ValueError("Invalid whole-disk topology")
                 if (
                     sum(device["size_bytes"] for device in backing["physical_volumes"])
                     < backing["vg_size_bytes"]
