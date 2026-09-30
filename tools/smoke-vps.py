@@ -142,6 +142,21 @@ def main():
                 "upgrade",
                 "head",
             )
+            compose(
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "lab",
+                "-d",
+                "lab",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-1",
+                "-c",
+                "DROP SCHEMA public CASCADE; CREATE SCHEMA public",
+            )
             updater_module.transfer(
                 [
                     *command,
@@ -190,6 +205,22 @@ def main():
                 "upgrade",
                 "head",
             )
+            latest_revision = subprocess.check_output(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Atc",
+                    "SELECT version_num FROM alembic_version",
+                ],
+                text=True,
+            ).strip()
             preserved = subprocess.check_output(
                 [
                     *command,
@@ -268,7 +299,7 @@ def main():
             assert json.loads(update.state_file.read_text())["failed_sha"] == "c" * 40
             assert update.running_image("api") == image_ids["api"]
             assert update.running_image("worker") == image_ids["worker"]
-            assert update.schema() == "0005_sizing"
+            assert update.schema() == latest_revision
             assert request("/api/auth/me", headers=authenticated)[0] == 200
             compose("ps")
             print(

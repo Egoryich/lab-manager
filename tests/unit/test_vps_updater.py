@@ -270,6 +270,11 @@ def test_migration_failure_restores_database_and_old_images(updater, monkeypatch
     assert not update.pending.exists() and not update.backup.exists()
     assert json.loads(update.state_file.read_text())["failed_sha"] == NEW
     assert module.fields(update.env.read_text())["LAB_API_IMAGE"] == update.running_image("api")
+    assert any(
+        args[:3] == ("exec", "-T", "postgres")
+        and "DROP SCHEMA public CASCADE; CREATE SCHEMA public" in args
+        for _, args in calls
+    )
     assert any(args[:1] == ("up",) and env == update.previous for env, args in calls)
 
 

@@ -363,6 +363,26 @@ class Updater:
     def restore_database(self):
         if not self.backup.is_file() or not self.backup.stat().st_size:
             raise RuntimeError("Migration archive missing; manual recovery required")
+        # A newer migration may add tables that reference objects in the archive.
+        # pg_restore --clean alone cannot drop those newer dependencies. This is
+        # the dedicated Lab Manager database, and API/worker are already stopped.
+        # Keep the archive until the old revision and services are verified.
+        self.compose(
+            self.previous,
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "lab",
+            "-d",
+            "lab",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-1",
+            "-c",
+            "DROP SCHEMA public CASCADE; CREATE SCHEMA public",
+        )
         transfer(
             self.compose_args(
                 self.previous,
