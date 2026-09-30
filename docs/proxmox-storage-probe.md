@@ -153,8 +153,112 @@ python3 -c 'import json,sys; rows=[{k:s.get(k) for k in ("storage","type","vgnam
 
 Один PV на VG пока не доказывает пригодность storage для admission: остаются сверка устройства и thin pool, всех guest/snapshot-томов и постоянных обязательств Lab Manager. `physical_backing_reconciled` и `commitments_reconciled` остаются ложными.
 
-## Подготовка постоянной PV/VG-сверки (wheel 0.5.0)
+## Постоянная PV/VG-сверка (wheel 0.5.0)
 
 Следующий выпуск root-задачи получает отдельные read-only отчёты `lvs`, `pvs` и `vgs` с фиксированными аргументами. Для каждого настроенного thin pool он сопоставляет VG, число PV, размеры и невыделенное место; несоответствие или ошибка любого отчёта не публикует новый снимок. В JSON появляется диагностический `backing` с именами устройств, размерами PV/VG и неизменно ложным `physical_backing_reconciled`. Невыделенное место VG не складывается с доступным местом thin pool. mTLS-агент продолжает только читать файл, `admission_ready=false` сохраняется.
 
-Это ещё не подтверждение отдельного физического диска и не разрешение броней: следующим шагом нужны связь PV с блочным устройством, проверка состояния диска и учёт всех постоянных томов. Команды обновления 0.5.0 добавляются после CI и реального запуска на Proxmox.
+Это ещё не подтверждение отдельного физического диска и не разрешение броней: следующим шагом нужны связь PV с блочным устройством, проверка состояния диска и учёт всех постоянных томов.
+
+### Проверенная подготовка 0.5.0
+
+CI выпуска `40aa370d6a094bb23c049ac29ebb3499389e8e7e` прошёл. Пользователь проверил внешний SHA256 `SHA256SUMS` и все шесть файлов выпуска, установил wheel 0.5.0 в отдельный venv и выполнил `systemd-analyze verify` без сообщений об ошибке. Ручной `host_storage` сопоставил `local-lvm` с PV `/dev/sdb3` и невыделенными 9 663 676 416 байт VG; `student-lvm` — с PV `/dev/sda` и 125 829 120 байт VG. Оба пула вернули `physical_backing_reconciled=false`, весь снимок — `admission_ready=false`. Работающие службы на этом шаге не переключались.
+
+Обобщённый блок успешной подготовки (SHA выпуска и хеш manifest брать из успешного CI):
+
+```bash
+set -euo pipefail
+umask 077
+release='<verified-full-sha>'
+release_url='<trusted-release-url>'
+manifest_sha256='<verified-manifest-sha256>'
+stage="/opt/lab-manager-node/releases/$release"
+test ! -e "$stage"
+install -d -m 0700 "$stage"
+cd "$stage"
+for asset in lab_node_agent-0.5.0-py3-none-any.whl \
+             lab-node-agent.service lab-node-storage-snapshot.service \
+             lab-node-storage-snapshot.timer node-pki.py SHA256SUMS; do
+  curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+    --proto '=https' --proto-redir '=https' -o "$asset" \
+    "$release_url/$asset"
+done
+printf '%s  %s\n' "$manifest_sha256" SHA256SUMS | sha256sum --check --strict
+sha256sum --check --strict SHA256SUMS
+python3 -m venv "$stage/venv" </dev/null
+"$stage/venv/bin/python" -m pip --disable-pip-version-check install \
+  --no-index --no-deps "$stage/lab_node_agent-0.5.0-py3-none-any.whl" </dev/null
+systemd-analyze verify "$stage/lab-node-storage-snapshot.service"
+"$stage/venv/bin/python" -m lab_node_agent.host_storage
+```
+
+### Подтверждённое переключение на 0.5.0
+
+После подготовки пользователь повторно проверил все файлы по `SHA256SUMS`, неизменённость agent/timer units и текущего storage unit. Он остановил таймер, заменил только storage service (увеличен timeout), атомарно переключил `current` и запустил oneshot. `read_snapshot()` от пользователя `lab-node-agent` прочитал два thin pool с полем `backing`; для обоих `physical_backing_reconciled=false`, общий `admission_ready=false`. Агент и таймер снова запустились, активный symlink указывает на 0.5.0, oneshot вернул `Result=success`, `ExecMainStatus=0`. Скрипт переключения включал trap для возврата старого symlink, unit и служб при ошибке. Немедленный вывод `list-timers` содержал `NEXT -`, поэтому периодичность и доставку на VPS нужно проверить отдельно.
+
+Обобщённые команды успешного пути после проверенной подготовки; перед новым выпуском снова сверить изменённые systemd units и адаптировать проверку снимка к его схеме:
+
+```bash
+set -euo pipefail
+test "$(id -u)" -eq 0
+release='<verified-full-sha>'
+base=/opt/lab-manager-node
+stage="$base/releases/$release"
+old=$(readlink -f "$base/current")
+unit=/etc/systemd/system/lab-node-storage-snapshot.service
+test -x "$stage/venv/bin/python"
+test -x "$old/venv/bin/python"
+test "$old" != "$stage"
+systemctl is-active --quiet lab-node-agent.service
+systemctl is-active --quiet lab-node-storage-snapshot.timer
+cmp "$old/lab-node-storage-snapshot.service" "$unit"
+cmp "$stage/lab-node-agent.service" /etc/systemd/system/lab-node-agent.service
+cmp "$stage/lab-node-storage-snapshot.timer" \
+  /etc/systemd/system/lab-node-storage-snapshot.timer
+(cd "$stage" && sha256sum --check --strict SHA256SUMS)
+chmod 0755 "$stage"
+chmod -R a+rX "$stage/venv"
+
+rollback() {
+  rc=$1
+  [ "$rc" -ne 0 ] || return 0
+  trap - EXIT
+  set +e
+  systemctl disable --now lab-node-storage-snapshot.timer
+  systemctl stop lab-node-storage-snapshot.service
+  ln -s "$old" "$base/current.rollback" &&
+    mv -Tf "$base/current.rollback" "$base/current"
+  install -o root -g root -m 0644 "$old/lab-node-storage-snapshot.service" "$unit"
+  systemctl daemon-reload
+  systemctl start lab-node-storage-snapshot.service
+  systemctl restart lab-node-agent.service
+  systemctl enable --now lab-node-storage-snapshot.timer
+  exit "$rc"
+}
+test ! -e "$base/current.next" && test ! -L "$base/current.next"
+test ! -e "$base/current.rollback" && test ! -L "$base/current.rollback"
+trap 'rollback $?' EXIT
+
+systemctl disable --now lab-node-storage-snapshot.timer
+systemctl stop lab-node-storage-snapshot.service
+install -o root -g root -m 0644 "$stage/lab-node-storage-snapshot.service" "$unit"
+systemctl daemon-reload
+ln -s "$stage" "$base/current.next"
+mv -Tf "$base/current.next" "$base/current"
+systemctl start lab-node-storage-snapshot.service
+test "$(systemctl show -P Result lab-node-storage-snapshot.service)" = success
+runuser -u lab-node-agent -- "$stage/venv/bin/python" -c '
+from lab_node_agent.host_storage import read_snapshot
+s = read_snapshot()
+pools = s["thin_pools"]
+assert len(pools) == 2
+assert all(p["backing"]["physical_backing_reconciled"] is False for p in pools)
+assert s["admission_ready"] is False
+print("Пулов:", len(pools), "допуск:", s["admission_ready"])
+'
+systemctl restart lab-node-agent.service
+systemctl is-active --quiet lab-node-agent.service
+systemctl enable --now lab-node-storage-snapshot.timer
+systemctl is-active --quiet lab-node-storage-snapshot.timer
+trap - EXIT
+systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
+```
