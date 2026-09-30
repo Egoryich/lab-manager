@@ -313,4 +313,113 @@ findmnt --json --mountpoint / \
 
 Подготовлен следующий read-only выпуск root-задачи: она запускает фиксированные `lsblk` и `findmnt` после LVM-отчётов и связывает каждый PV с текущими дисками-предками. Повторяющиеся device-mapper узлы допускаются только с одинаковыми типом, размером и точками монтирования. Для PV в диагностическом `topology` публикуются тип блочного устройства, размер, список дисков-предков, признак целого диска и пересечение с дисками системного `/`. Отсутствующий PV, нераспознанный источник `/`, противоречащий отчёт или меньший размер блочного устройства отклоняют новый снимок; старый снимок перестаёт считаться свежим через 120 секунд.
 
-Чистый парсер проверен на присланных JSON: `student-lvm` определён как отдельный целый диск, `local-lvm` — как раздел системного диска. Локальные тесты включают пропавший PV, иной корневой источник, неверный размер и противоречащие повторы device-mapper. Важная граница: это текущая топология, а не гарантия стабильности имён `/dev/sd*`, здоровья носителя или полноты дисковых обязательств. `physical_backing_reconciled=false` и `admission_ready=false` остаются неизменными. Установка 0.6.0 на Proxmox будет записана после CI и проверки пользователем.
+Чистый парсер проверен на присланных JSON: `student-lvm` определён как отдельный целый диск, `local-lvm` — как раздел системного диска. Локальные тесты включают пропавший PV, иной корневой источник, неверный размер и противоречащие повторы device-mapper. Важная граница: это текущая топология, а не гарантия стабильности имён `/dev/sd*`, здоровья носителя или полноты дисковых обязательств. `physical_backing_reconciled=false` и `admission_ready=false` остаются неизменными. Переключение работающих служб на 0.6.0 записывается отдельно после проверки пользователем.
+
+### Проверенная подготовка 0.6.0
+
+[CI выпуска `e3a2b70733ec991c468e36771d7ad2daab27248c`](https://github.com/Egoryich/lab-manager/actions/runs/36717299451) завершился успешно и опубликовал wheel 0.6.0. Пользователь скачал шесть файлов в отдельный каталог, сверил внешний SHA-256 файла `SHA256SUMS` и все внутренние хеши, установил wheel без внешних зависимостей. Все три systemd unit совпали с установленными; `systemd-analyze verify` не сообщил ошибок. Ручной сбор дал `local-lvm` на разделе `/dev/sdb3` системного `/dev/sdb` и `student-lvm` на целом отдельном `/dev/sda`; `physical_backing_reconciled=false`, `admission_ready=false`. Службы и symlink `current` на этом шаге не переключались.
+
+Обобщённые подтверждённые команды подготовки (SHA выпуска и хеш manifest брать из успешного CI, адреса и секреты не сохранять):
+
+```bash
+set -euo pipefail
+umask 077
+test "$(id -u)" -eq 0
+release='<verified-full-sha>'
+release_url='<trusted-release-url>'
+manifest_sha256='<verified-manifest-sha256>'
+stage="/opt/lab-manager-node/releases/$release"
+test ! -e "$stage"
+install -d -m 0700 "$stage"
+cd "$stage"
+for asset in lab_node_agent-0.6.0-py3-none-any.whl \
+             lab-node-agent.service lab-node-storage-snapshot.service \
+             lab-node-storage-snapshot.timer node-pki.py SHA256SUMS; do
+  curl --fail --location --retry 3 --connect-timeout 15 --max-time 180 \
+    --proto '=https' --proto-redir '=https' -o "$asset" "$release_url/$asset"
+done
+printf '%s  %s\n' "$manifest_sha256" SHA256SUMS | sha256sum --check --strict
+sha256sum --check --strict SHA256SUMS
+python3 -m venv "$stage/venv" </dev/null
+"$stage/venv/bin/python" -m pip --disable-pip-version-check install \
+  --no-index --no-deps "$stage/lab_node_agent-0.6.0-py3-none-any.whl" </dev/null
+cmp "$stage/lab-node-agent.service" /etc/systemd/system/lab-node-agent.service
+cmp "$stage/lab-node-storage-snapshot.service" \
+  /etc/systemd/system/lab-node-storage-snapshot.service
+cmp "$stage/lab-node-storage-snapshot.timer" \
+  /etc/systemd/system/lab-node-storage-snapshot.timer
+systemd-analyze verify "$stage/lab-node-storage-snapshot.service"
+"$stage/venv/bin/python" -m lab_node_agent.host_storage
+```
+
+### Подтверждённое переключение на 0.6.0
+
+Пользователь проверил версии wheel 0.5.0/0.6.0, все файлы по `SHA256SUMS` и неизменность трёх systemd unit. После атомарного переключения `current` oneshot записал снимок с новой топологией. `read_snapshot()` от `lab-node-agent` подтвердил `student-lvm` на отдельном целом диске и `local-lvm` на системном разделе; оба признака `physical_backing_reconciled` и общий `admission_ready` остались ложными. Агент и таймер снова стали активными, oneshot вернул `Result=success`, `ExecMainStatus=0`; активный symlink указывает на выпуск 0.6.0. Как и при 0.5.0, мгновенный вывод таймера содержал `NEXT -`: периодичность и доставку на VPS проверить отдельным шагом.
+
+Обобщённый успешный порядок с возвратом предыдущего wheel при ошибке. Для другого сервера/выпуска скорректировать ожидаемые версии, имена storage и проверки топологии до запуска:
+
+```bash
+set -euo pipefail
+test "$(id -u)" -eq 0
+release='<verified-full-sha>'
+base=/opt/lab-manager-node
+stage="$base/releases/$release"
+old=$(readlink -f "$base/current")
+test -x "$stage/venv/bin/python"
+test -x "$old/venv/bin/python"
+test "$old" != "$stage"
+test ! -e "$base/current.next" && test ! -L "$base/current.next"
+test ! -e "$base/current.rollback" && test ! -L "$base/current.rollback"
+systemctl is-active --quiet lab-node-agent.service
+systemctl is-active --quiet lab-node-storage-snapshot.timer
+cmp "$stage/lab-node-agent.service" /etc/systemd/system/lab-node-agent.service
+cmp "$stage/lab-node-storage-snapshot.service" \
+  /etc/systemd/system/lab-node-storage-snapshot.service
+cmp "$stage/lab-node-storage-snapshot.timer" \
+  /etc/systemd/system/lab-node-storage-snapshot.timer
+(cd "$stage" && sha256sum --check --strict SHA256SUMS)
+chmod 0755 "$stage"
+chmod -R a+rX "$stage/venv"
+
+rollback() {
+  rc=$1
+  trap - EXIT
+  set +e
+  systemctl disable --now lab-node-storage-snapshot.timer
+  systemctl stop lab-node-storage-snapshot.service
+  rm -f "$base/current.next"
+  ln -s "$old" "$base/current.rollback" &&
+    mv -Tf "$base/current.rollback" "$base/current"
+  systemctl start lab-node-storage-snapshot.service
+  systemctl restart lab-node-agent.service
+  systemctl enable --now lab-node-storage-snapshot.timer
+  exit "$rc"
+}
+trap 'rollback $?' EXIT
+systemctl disable --now lab-node-storage-snapshot.timer
+systemctl stop lab-node-storage-snapshot.service
+ln -s "$stage" "$base/current.next"
+mv -Tf "$base/current.next" "$base/current"
+systemctl start lab-node-storage-snapshot.service
+test "$(systemctl show -P Result lab-node-storage-snapshot.service)" = success
+runuser -u lab-node-agent -- "$stage/venv/bin/python" -c '
+from lab_node_agent.host_storage import read_snapshot
+s = read_snapshot()
+pools = {p["storage"]: p for p in s["thin_pools"]}
+assert set(pools) == {"local-lvm", "student-lvm"}
+student = pools["student-lvm"]["backing"]["physical_volumes"]
+system = pools["local-lvm"]["backing"]["physical_volumes"]
+assert len(student) == len(system) == 1
+assert student[0]["topology"]["whole_disk"] is True
+assert student[0]["topology"]["shares_system_disk"] is False
+assert system[0]["topology"]["shares_system_disk"] is True
+assert all(p["backing"]["physical_backing_reconciled"] is False for p in pools.values())
+assert s["admission_ready"] is False
+'
+systemctl restart lab-node-agent.service
+systemctl is-active --quiet lab-node-agent.service
+systemctl enable --now lab-node-storage-snapshot.timer
+systemctl is-active --quiet lab-node-storage-snapshot.timer
+trap - EXIT
+systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
+```
