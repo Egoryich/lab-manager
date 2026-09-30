@@ -716,6 +716,8 @@ export interface components {
             guest_count: number | null;
             /** Storage Count */
             storage_count: number | null;
+            /** Storages */
+            storages: components["schemas"]["StorageView"][] | null;
             /**
              * Admission Ready
              * @default false
@@ -952,6 +954,25 @@ export interface components {
             csrf_token: string;
             /** Can Create Groups */
             can_create_groups: boolean;
+        };
+        /** StorageView */
+        StorageView: {
+            /** Name */
+            name: string;
+            /** Backend */
+            backend: string;
+            /** Active */
+            active: boolean;
+            /** Total Bytes */
+            total_bytes: number | null;
+            /** Used Bytes */
+            used_bytes: number | null;
+            /** Available Bytes */
+            available_bytes: number | null;
+            /** Thin Metadata Percent */
+            thin_metadata_percent: number | null;
+            /** Observed Volume Count */
+            observed_volume_count: number | null;
         };
         /** TemplateCreate */
         TemplateCreate: {

@@ -52,6 +52,54 @@ export function NodePanel() {
               </dd>
             </dl>
           )}
+          {node.storages && node.storages.length > 0 && (
+            <div className="resource-estimate">
+              <h3>Хранилища</h3>
+              <p className="muted">
+                Наблюдаемые значения Proxmox. Свободное место здесь не означает доступный лимит
+                для новых машин.
+              </p>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Имя</th>
+                      <th>Тип</th>
+                      <th>Всего</th>
+                      <th>Свободно</th>
+                      <th>Thin metadata</th>
+                      <th>Томов найдено</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {node.storages.map((storage) => (
+                      <tr key={storage.name}>
+                        <td>{storage.name}</td>
+                        <td>{storage.backend}</td>
+                        <td>
+                          {storage.total_bytes === null ? '—' : `${gib(storage.total_bytes)} GiB`}
+                        </td>
+                        <td>
+                          {storage.available_bytes === null
+                            ? '—'
+                            : `${gib(storage.available_bytes)} GiB`}
+                        </td>
+                        <td>
+                          {storage.thin_metadata_percent === null
+                            ? '—'
+                            : `${storage.thin_metadata_percent}%`}
+                        </td>
+                        <td>{storage.observed_volume_count ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {!node.admission_ready && (
+            <p className="muted">Запуск занятий пока заблокирован проверками ресурсов и сети.</p>
+          )}
           {node.status !== 'FRESH' && (
             <p className="muted">
               Нет подтверждения текущего состояния. Это не означает, что сервер выключен.

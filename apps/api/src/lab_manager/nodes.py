@@ -36,7 +36,19 @@ class NodeView(BaseModel):
     host: HostObservation | None
     guest_count: int | None
     storage_count: int | None
+    storages: list["StorageView"] | None
     admission_ready: bool = False
+
+
+class StorageView(BaseModel):
+    name: str
+    backend: str
+    active: bool
+    total_bytes: int | None
+    used_bytes: int | None
+    available_bytes: int | None
+    thin_metadata_percent: float | None
+    observed_volume_count: int | None
 
 
 async def store_observation(
@@ -107,6 +119,22 @@ async def list_nodes(db: DB, actor: Actor):
             and -10 <= (now - row.sample_finished_at).total_seconds() <= 120
             and 0 <= (now - row.last_contact_at).total_seconds() <= 120
         )
+        local_pools = (
+            {item["storage"]: item for item in sample.get("local_thin_pools", [])} if sample else {}
+        )
+        storages = (
+            [
+                StorageView(
+                    **item,
+                    observed_volume_count=len(local_pools[item["name"]]["volumes"])
+                    if item["name"] in local_pools
+                    else None,
+                )
+                for item in sample["storages"]
+            ]
+            if sample
+            else None
+        )
         result.append(
             NodeView(
                 id=row.id,
@@ -122,6 +150,7 @@ async def list_nodes(db: DB, actor: Actor):
                 host=sample["host"] if sample else None,
                 guest_count=len(sample["guests"]) if sample else None,
                 storage_count=len(sample["storages"]) if sample else None,
+                storages=storages,
             )
         )
     return result

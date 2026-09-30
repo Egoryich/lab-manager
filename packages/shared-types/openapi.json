@@ -4373,6 +4373,20 @@
             ],
             "title": "Storage Count"
           },
+          "storages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StorageView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storages"
+          },
           "admission_ready": {
             "type": "boolean",
             "title": "Admission Ready",
@@ -4389,7 +4403,8 @@
           "error_code",
           "host",
           "guest_count",
-          "storage_count"
+          "storage_count",
+          "storages"
         ],
         "title": "NodeView"
       },
@@ -5072,6 +5087,89 @@
           "can_create_groups"
         ],
         "title": "SessionView"
+      },
+      "StorageView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          },
+          "available_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Bytes"
+          },
+          "thin_metadata_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thin Metadata Percent"
+          },
+          "observed_volume_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Volume Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "backend",
+          "active",
+          "total_bytes",
+          "used_bytes",
+          "available_bytes",
+          "thin_metadata_percent",
+          "observed_volume_count"
+        ],
+        "title": "StorageView"
       },
       "TemplateCreate": {
         "properties": {
