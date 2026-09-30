@@ -3,7 +3,7 @@
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text
 
 from lab_manager.capacity import (
     CapacityPolicy,
@@ -97,6 +97,30 @@ def capacity_policy(row):
     )
 
 
+def peak_compute_claims(reservations, starts_at, ends_at):
+    """Return the largest concurrent RAM/CPU claim in a half-open window.
+
+    An ACTIVE lesson keeps its claim until an explicit confirmed stop, even if
+    its scheduled end is in the past. RESERVED lessons claim only their booked
+    interval. Adjacent intervals do not overlap.
+    """
+    events = []
+    for item in reservations:
+        start = starts_at if item.state == "ACTIVE" else max(starts_at, item.starts_at)
+        end = ends_at if item.state == "ACTIVE" else min(ends_at, item.ends_at)
+        if start >= end:
+            continue
+        events.append((start, item.memory_mib, item.cpu_millicredits))
+        events.append((end, -item.memory_mib, -item.cpu_millicredits))
+    memory = cpu = peak_memory = peak_cpu = 0
+    for _, memory_delta, cpu_delta in sorted(events):
+        memory += memory_delta
+        cpu += cpu_delta
+        peak_memory = max(peak_memory, memory)
+        peak_cpu = max(peak_cpu, cpu)
+    return peak_memory, peak_cpu
+
+
 async def reserve_lesson(
     sessions,
     *,
@@ -165,9 +189,14 @@ async def reserve_lesson(
             await db.scalars(
                 select(LessonReservation).where(
                     LessonReservation.node_id == node_id,
-                    LessonReservation.state.in_(("RESERVED", "ACTIVE")),
-                    LessonReservation.starts_at < ends_at,
-                    LessonReservation.ends_at > starts_at,
+                    or_(
+                        LessonReservation.state == "ACTIVE",
+                        (
+                            (LessonReservation.state == "RESERVED")
+                            & (LessonReservation.starts_at < ends_at)
+                            & (LessonReservation.ends_at > starts_at)
+                        ),
+                    ),
                 )
             )
         )
@@ -190,9 +219,10 @@ async def reserve_lesson(
             or own_disk.hibernation_bytes != demand.hibernation_bytes
         ):
             raise AdmissionRejected("DISK_ALLOCATION_CONFLICT")
+        peak_memory, peak_cpu = peak_compute_claims(overlapping, starts_at, ends_at)
         committed = ResourceDemand(
-            memory_mib=sum(item.memory_mib for item in overlapping),
-            cpu_millicredits=sum(item.cpu_millicredits for item in overlapping),
+            memory_mib=peak_memory,
+            cpu_millicredits=peak_cpu,
             disk_bytes=sum(item.disk_bytes for item in allocations),
             hibernation_bytes=sum(item.hibernation_bytes for item in allocations),
         )

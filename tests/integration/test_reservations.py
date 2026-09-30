@@ -226,3 +226,63 @@ async def test_cancelling_lesson_preserves_materialized_disk(app, seed):
         assert allocation is not None
         assert allocation.state == "MATERIALIZED"
         assert (await db.get(LessonReservation, reservation.id)).state == "CANCELLED"
+
+
+async def test_adjacent_lessons_use_peak_instead_of_sum(app, seed):
+    teachers = [await seed("TEACHER") for _ in range(3)]
+    node_id, environments = await setup(app, [teacher.id for teacher in teachers])
+    start = datetime.now(UTC) + timedelta(hours=1)
+
+    async def book(index, begins, ends, memory):
+        return await reserve_lesson(
+            app.state.sessions,
+            node_id=node_id,
+            environment_id=environments[index],
+            teacher_id=teachers[index].id,
+            request_id=uuid.uuid4(),
+            starts_at=begins,
+            ends_at=ends,
+            demand=ResourceDemand(memory_mib=memory, cpu_millicredits=1000, disk_bytes=10 * GIB),
+        )
+
+    await book(0, start, start + timedelta(hours=1), 1200)
+    await book(1, start + timedelta(hours=1), start + timedelta(hours=2), 1200)
+    # Both existing lessons overlap this request, but never each other.
+    candidate = await book(
+        2, start + timedelta(minutes=30), start + timedelta(hours=1, minutes=30), 600
+    )
+    assert candidate.state == "RESERVED"
+
+
+async def test_overdue_active_lesson_keeps_compute_until_confirmed_stop(app, seed):
+    teachers = [await seed("TEACHER") for _ in range(2)]
+    node_id, environments = await setup(app, [teacher.id for teacher in teachers])
+    now = datetime.now(UTC)
+    async with app.state.sessions() as db, db.begin():
+        db.add(
+            LessonReservation(
+                node_id=node_id,
+                environment_id=environments[0],
+                teacher_id=teachers[0].id,
+                request_id=uuid.uuid4(),
+                starts_at=now - timedelta(hours=2),
+                ends_at=now - timedelta(hours=1),
+                memory_mib=1800,
+                cpu_millicredits=1000,
+                disk_bytes=10 * GIB,
+                hibernation_bytes=0,
+                state="ACTIVE",
+            )
+        )
+    with pytest.raises(AdmissionRejected) as error:
+        await reserve_lesson(
+            app.state.sessions,
+            node_id=node_id,
+            environment_id=environments[1],
+            teacher_id=teachers[1].id,
+            request_id=uuid.uuid4(),
+            starts_at=now + timedelta(hours=1),
+            ends_at=now + timedelta(hours=2),
+            demand=ResourceDemand(memory_mib=512, cpu_millicredits=1000, disk_bytes=10 * GIB),
+        )
+    assert "RAM_INSUFFICIENT" in error.value.reasons
