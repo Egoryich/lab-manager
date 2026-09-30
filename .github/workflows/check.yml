@@ -15,6 +15,7 @@ jobs:
       - run: uv run --project apps/node-agent ruff check apps/node-agent
       - run: uv run --project apps/node-agent ruff format --check apps/node-agent
       - run: uv run --project apps/node-agent pytest apps/node-agent/tests -c apps/node-agent/pyproject.toml -q
+      - run: sh -n tools/install-node-updater.sh && python3 -m py_compile tools/update-node.py
       - run: uv build --project apps/node-agent --wheel --out-dir artifacts/node-agent
       - name: Check standalone installation
         run: |
@@ -22,9 +23,9 @@ jobs:
           /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
           /tmp/lab-agent-package-test/bin/lab-node-agent --help
           /tmp/lab-agent-package-test/bin/python -m lab_node_agent.service --help
-          cp infra/proxmox/lab-node-agent.service infra/proxmox/lab-node-storage-snapshot.service infra/proxmox/lab-node-storage-snapshot.timer tools/node-pki.py artifacts/node-agent/
+          cp infra/proxmox/lab-node-agent.service infra/proxmox/lab-node-storage-snapshot.service infra/proxmox/lab-node-storage-snapshot.timer infra/proxmox/lab-node-update.service infra/proxmox/lab-node-update.timer tools/node-pki.py tools/update-node.py tools/install-node-updater.sh artifacts/node-agent/
           cd artifacts/node-agent
-          sha256sum *.whl *.service *.timer *.py > SHA256SUMS
+          sha256sum *.whl *.service *.timer *.py *.sh > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: node-agent-${{ github.sha }}
@@ -52,7 +53,7 @@ jobs:
           else
             gh release create "$tag" release/* --target "$GITHUB_SHA" --prerelease \
               --title "Node inventory ${GITHUB_SHA}" \
-              --notes "Read-only Proxmox inventory with pinned mTLS service. No guest changes. Manual deployment: docs/node-transport.md at this commit."
+              --notes "Read-only Proxmox inventory and verified node updater. No guest changes. Deployment: docs/node-auto-update.md at this commit."
           fi
   identity-groups:
     runs-on: ubuntu-latest
