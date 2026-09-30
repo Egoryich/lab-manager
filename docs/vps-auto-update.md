@@ -121,3 +121,19 @@ systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
 journalctl -u lab-manager-update.service -n 12 --no-pager
 curl --fail http://127.0.0.1:18000/api/health/ready
 ```
+
+### Подтверждённое обновление админского экрана хранилищ
+
+30 сентября пользователь запустил `lab-manager-update.service` после выпуска `27b21337414caece8c719291e73e2a32a07fa4e7`. `Result=success`, `ExecMainStatus=0`, журнал несколько раз сообщил `Already current`, а `update-state/state.json` содержит этот SHA. Значит updater уже применил проверенный выпуск с таблицей наблюдаемых хранилищ в Admin UI. В присланном выводе **нет ответа последней команды `curl`**, поэтому отдельная готовность API и отображение страницы в браузере на данном шаге не подтверждены.
+
+Подтверждённые команды проверки (локальный endpoint, без адреса сайта и секретов):
+
+```bash
+cd /opt/lab-manager/repo
+sudo systemctl start lab-manager-update.service
+systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
+sudo journalctl -u lab-manager-update.service -n 15 --no-pager
+python3 -c 'import json; print(json.load(open("/opt/lab-manager/update-state/state.json"))["active_sha"])'
+```
+
+Следующий шаг — отдельно проверить `curl --fail --silent --show-error --max-time 15 http://127.0.0.1:18000/api/health/ready` и страницу «Серверы» под Admin. Физически свободное место на этой странице не является автоматически доступным для новых машин; admission остаётся закрытым, пока не сверены постоянные дисковые обязательства, чужие машины и сеть.
