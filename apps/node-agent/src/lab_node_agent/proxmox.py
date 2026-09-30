@@ -79,6 +79,7 @@ class ProxmoxReader:
             "permissions": "/access/permissions?path=%2F",
             "status": f"/nodes/{self.config.node}/status",
             "storage": f"/nodes/{self.config.node}/storage",
+            "network": f"/nodes/{self.config.node}/network",
             "qemu": f"/nodes/{self.config.node}/qemu",
             "lxc": f"/nodes/{self.config.node}/lxc",
         }

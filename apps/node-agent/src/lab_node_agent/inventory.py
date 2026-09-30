@@ -32,6 +32,25 @@ def label(value):
     return value
 
 
+def bridges(value):
+    result = []
+    for raw in array_value(value):
+        item = object_value(raw)
+        if item.get("type") != "bridge":
+            continue
+        ports = item.get("bridge_ports")
+        if not isinstance(ports, str) or len(ports) > 1024:
+            raise InventoryError("PROXMOX_RESPONSE_INVALID")
+        result.append(
+            {
+                "name": label(item.get("iface")),
+                "active": item.get("active") == 1,
+                "ports": [] if ports in ("", "none") else ports.split(),
+            }
+        )
+    return result
+
+
 def collect(reader, local_storage=None):
     started = datetime.now(UTC)
     # Lists are permission-filtered. Refuse a token missing global audit grants.
@@ -89,6 +108,11 @@ def collect(reader, local_storage=None):
         "DISK_COMMITMENTS_NOT_RECONCILED",
         "NETWORK_AND_GATEWAY_NOT_VERIFIED",
     ]
+    try:
+        network_bridges = bridges(reader.get("network"))
+    except InventoryError:
+        network_bridges = []
+        limitations.append("NETWORK_INVENTORY_UNAVAILABLE")
     local_pools = []
     if local_storage is None:
         limitations.append("LOCAL_STORAGE_SNAPSHOT_UNAVAILABLE")
@@ -128,6 +152,7 @@ def collect(reader, local_storage=None):
         },
         "storages": storages,
         "guests": guests,
+        "network_bridges": network_bridges,
         "local_thin_pools": local_pools,
         "admission_ready": False,
         "limitations": limitations,

@@ -36,6 +36,11 @@ def data():
             }
         ],
         "qemu": [],
+        "network": [
+            {"type": "bridge", "iface": "vmbr0", "active": 1, "bridge_ports": "nic0"},
+            {"type": "bridge", "iface": "vmbr1", "active": 1, "bridge_ports": ""},
+            {"type": "eth", "iface": "nic0", "active": 1},
+        ],
         "lxc": [
             {
                 "vmid": 201,
@@ -67,6 +72,11 @@ def test_snapshot_preserves_external_guests_without_admission():
     assert result["guests"][0]["reported_status"] == "stopped"
     assert result["storages"][0]["thin_metadata_percent"] is None
     assert result["admission_ready"] is False
+    assert result["network_bridges"] == [
+        {"name": "vmbr0", "active": True, "ports": ["nic0"]},
+        {"name": "vmbr1", "active": True, "ports": []},
+    ]
+    assert "NETWORK_AND_GATEWAY_NOT_VERIFIED" in result["limitations"]
     assert "token" not in json.dumps(result)
 
 
@@ -84,6 +94,25 @@ def test_narrow_token_cannot_present_empty_inventory_as_free_capacity():
     reader.data["permissions"]["/"].pop("VM.Audit")
     with pytest.raises(InventoryError, match="GLOBAL_AUDIT_PERMISSIONS_REQUIRED"):
         collect(reader)
+
+
+def test_network_observation_failure_does_not_hide_other_inventory():
+    class NetworkDenied(Reader):
+        def get(self, key):
+            if key == "network":
+                raise InventoryError("PROXMOX_ACCESS_DENIED")
+            return super().get(key)
+
+    result = collect(NetworkDenied())
+    assert result["network_bridges"] == []
+    assert "NETWORK_INVENTORY_UNAVAILABLE" in result["limitations"]
+    assert result["admission_ready"] is False
+
+    reader = Reader()
+    reader.data["network"][0].pop("bridge_ports")
+    malformed = collect(reader)
+    assert malformed["network_bridges"] == []
+    assert "NETWORK_INVENTORY_UNAVAILABLE" in malformed["limitations"]
 
 
 def test_local_storage_metadata_requires_exact_pool_match_and_never_opens_admission():
@@ -191,7 +220,7 @@ def test_verified_https_allows_only_fixed_gets_and_refuses_redirect(https_pve, m
     monkeypatch.setenv("HTTPS_PROXY", "http://invalid.example:9")
     reader = ProxmoxReader(config)
     assert collect(reader)["node"] == "pve"
-    assert len(state.requests) == 6
+    assert len(state.requests) == 7
     assert all(method == "GET" for method, _, _ in state.requests)
     assert all(
         auth == "PVEAPIToken=inventory@pve!reader=test-token-value-0123456789"
