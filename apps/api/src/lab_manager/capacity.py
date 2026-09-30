@@ -31,7 +31,7 @@ class CapacityPolicy:
             or not 1 <= self.cpu_millicredits_per_logical_cpu <= 4000
         ):
             raise ValueError("Invalid CPU or RAM reserve")
-        if not 1 <= self.storage_free_percent <= 50:
+        if not 10 <= self.storage_free_percent <= 50:
             raise ValueError("Invalid storage free floor")
         if not 1 <= self.thin_metadata_limit_percent <= 99:
             raise ValueError("Invalid thin metadata limit")
@@ -70,6 +70,7 @@ class StorageObservation:
     active: bool
     is_thin: bool
     commitments_reconciled: bool
+    physical_backing_reconciled: bool
     external_committed_bytes: int = 0
 
 
@@ -100,6 +101,8 @@ def assess_capacity(
     policy: CapacityPolicy,
     committed: ResourceDemand,
     requested: ResourceDemand,
+    *,
+    check_current_free_memory: bool = True,
 ) -> CapacityDecision:
     """Bound simultaneous allocation; missing evidence fails closed.
 
@@ -141,7 +144,9 @@ def assess_capacity(
     # A second check against currently free RAM protects against host memory
     # used by unknown processes even when the configured budget is generous.
     free_ram_headroom = max(0, node.memory_free_bytes // MIB - policy.safety_reserve_mib)
-    if requested.memory_mib > min(ram_headroom, free_ram_headroom):
+    if requested.memory_mib > (
+        min(ram_headroom, free_ram_headroom) if check_current_free_memory else ram_headroom
+    ):
         reasons.append("RAM_INSUFFICIENT")
 
     cpu_budget = max(
@@ -179,6 +184,8 @@ def assess_capacity(
             reasons.append("STORAGE_INSUFFICIENT")
     if not storage.commitments_reconciled:
         reasons.append("DISK_COMMITMENTS_UNKNOWN")
+    if not storage.physical_backing_reconciled:
+        reasons.append("STORAGE_BACKING_UNKNOWN")
     if storage.is_thin and (
         storage.thin_metadata_percent is None
         or not 0 <= storage.thin_metadata_percent < policy.thin_metadata_limit_percent
@@ -187,7 +194,9 @@ def assess_capacity(
     return CapacityDecision(
         permitted=not reasons,
         reasons=tuple(reasons),
-        ram_headroom_mib=min(ram_headroom, free_ram_headroom),
+        ram_headroom_mib=min(ram_headroom, free_ram_headroom)
+        if check_current_free_memory
+        else ram_headroom,
         cpu_headroom_millicredits=cpu_headroom,
         storage_headroom_bytes=storage_headroom,
     )

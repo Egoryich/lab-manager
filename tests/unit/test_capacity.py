@@ -26,6 +26,7 @@ def prepared_node():
             active=True,
             is_thin=True,
             commitments_reconciled=True,
+            physical_backing_reconciled=True,
             external_committed_bytes=10 * GIB,
         ),
         admission_ready=True,
@@ -71,13 +72,21 @@ def test_missing_reconciliation_or_thin_metadata_blocks_even_a_tiny_request():
     missing = replace(
         node,
         ownership_reconciled=False,
-        storage=replace(node.storage, thin_metadata_percent=None, commitments_reconciled=False),
+        storage=replace(
+            node.storage,
+            thin_metadata_percent=None,
+            commitments_reconciled=False,
+            physical_backing_reconciled=False,
+        ),
     )
     decision = assess_capacity(missing, policy(), ResourceDemand(), request)
     assert not decision.permitted
-    assert {"GUEST_OWNERSHIP_UNKNOWN", "DISK_COMMITMENTS_UNKNOWN", "THIN_METADATA_UNSAFE"} <= set(
-        decision.reasons
-    )
+    assert {
+        "GUEST_OWNERSHIP_UNKNOWN",
+        "DISK_COMMITMENTS_UNKNOWN",
+        "STORAGE_BACKING_UNKNOWN",
+        "THIN_METADATA_UNSAFE",
+    } <= set(decision.reasons)
     assert not assess_capacity(
         replace(node, inventory_fresh=False), policy(), ResourceDemand(), request
     ).permitted

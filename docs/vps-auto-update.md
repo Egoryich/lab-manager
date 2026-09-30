@@ -78,3 +78,27 @@ sudo python3 /usr/local/lib/lab-manager/update-vps.py --retry
 Начиная с выпуска `0003_operations` updater обновляет и восстанавливает API, web и worker совместно. Worker использует тот же API-образ; различие image IDs блокирует применение. Готовность включает Docker healthcheck worker. Старый baseline без worker требует ручного перехода: [гайд выпуска](vps-worker-rollout.md). Начиная с подготовки `0005_sizing` новый updater поддерживает миграции с временным архивом; переход с уже установленного старого updater требует однократной замены его systemd-скрипта после успешного CI. [Порядок перехода](vps-sizing-rollout.md).
 
 Updater установлен отдельным файлом в `/usr/local/lib/lab-manager/update-vps.py`; обычное обновление образов его не заменяет. Перед выпуском `0006_ledger` с новыми внешними ключами нужно установить версию updater, которая при откате сначала очищает выделенную базу Lab Manager, затем восстанавливает её из временного архива. Архив сохраняется до проверки старой ревизии и готовности сервисов. Одноразовый Compose smoke проверяет этот порядок. Установка нового updater выполняется только из уже прошедшего CI коммита без миграции; затем проверяются `Result=success` и активный timer. Команды конкретного выпуска записываются в его гайд.
+
+### Подтверждённая повторная установка updater
+
+30 сентября пользователь подтвердил успешную установку исправленного updater из коммита `79f52dd2c54749901dd45e98c74d50ed10584538` после [успешного CI](https://github.com/Egoryich/lab-manager/actions/runs/36679735173): `Result=success`, `ExecMainStatus=0`, активный timer и совпадение установленного файла с `git show` этого коммита. Перед установкой `active_sha` уже совпадал с выпуском. Это подтверждает установленный механизм отката, но не миграцию `0006_ledger`.
+
+Для следующего проверенного выпуска **без миграции** общий порядок такой (вместо переменной подставить полный SHA прошедшего CI коммита). Запускать на VPS от root; скрипт установщика не получает stdin из pipe:
+
+```bash
+set -euo pipefail
+cd /opt/lab-manager/repo
+release='<verified-full-sha>'
+systemctl start lab-manager-update.service
+test "$(python3 -c 'import json; print(json.load(open("/opt/lab-manager/update-state/state.json"))["active_sha"])')" = "$release"
+test ! -e /opt/lab-manager/update-state/pending.json
+script=$(mktemp /opt/lab-manager/updater-install.XXXXXX.sh)
+trap 'rm -f "$script"' EXIT
+git show "$release:tools/install-vps-updater.sh" > "$script"
+bash "$script" "$release" </dev/null
+systemctl start lab-manager-update.service
+cmp -s /usr/local/lib/lab-manager/update-vps.py \
+  <(git show "$release:tools/update-vps.py")
+systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus
+systemctl list-timers --all lab-manager-update.timer --no-pager
+```
