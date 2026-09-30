@@ -7,3 +7,5 @@
 [Подготовка установки и границы inventory](../../docs/proxmox-agent-first-install.md).
 
 [План реализации](../../docs/implementation-plan.md).
+
+Wheel 0.3.0 также содержит [локальную диагностику LVM-thin](../../docs/proxmox-storage-probe.md). Она запускается администратором отдельно и не меняет права или поведение установленной службы.
