@@ -173,7 +173,8 @@
       "verification_status": "NOT_RUN",
       "amended_by": [
         "DEC-05",
-        "DEC-06"
+        "DEC-06",
+        "DEC-18"
       ]
     },
     {
@@ -187,7 +188,8 @@
       "implementation_status": "NOT_STARTED",
       "verification_status": "NOT_RUN",
       "amended_by": [
-        "DEC-06"
+        "DEC-06",
+        "DEC-18"
       ]
     },
     {
@@ -203,7 +205,8 @@
       "verification_status": "NOT_RUN",
       "amended_by": [
         "DEC-05",
-        "DEC-16"
+        "DEC-16",
+        "DEC-18"
       ]
     },
     {
@@ -218,7 +221,8 @@
       "implementation_status": "NOT_STARTED",
       "verification_status": "NOT_RUN",
       "amended_by": [
-        "DEC-05"
+        "DEC-05",
+        "DEC-18"
       ]
     },
     {
@@ -995,7 +999,8 @@
       "implementation_status": "NOT_STARTED",
       "verification_status": "NOT_RUN",
       "amended_by": [
-        "DEC-05"
+        "DEC-05",
+        "DEC-18"
       ]
     },
     {

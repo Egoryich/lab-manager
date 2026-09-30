@@ -288,6 +288,14 @@
       ],
       "implementation_status": "NOT_STARTED",
       "verification_status": "NOT_RUN"
+    },
+    {
+      "id": "DEC-18",
+      "design_document": "docs/networking.md",
+      "source_sections": [11, 12, 13, 14, 65],
+      "acceptance_ids": ["ACC-27", "ACC-32", "ACC-33"],
+      "implementation_status": "NOT_STARTED",
+      "verification_status": "NOT_RUN"
     }
   ]
 }

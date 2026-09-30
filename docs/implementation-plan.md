@@ -18,7 +18,7 @@ UI разрабатывается вместе с вертикальными с�
 
 ## Первые задачи D1
 
-1. Реализовывать принятые DEC-01…17: local signup, soft archive, VM hibernate/LXC shutdown, обязательная Demo, private calendars, destructive kick, backup disabled и Admin-only snapshots. Получить hardware inventory и реальный Tuya status mapping.
+1. Реализовывать принятые DEC-01…18: local signup, soft archive, VM hibernate/LXC shutdown, обязательная Demo, private calendars, destructive kick, backup disabled, Admin-only snapshots и гостевой egress через VPS. Получить hardware inventory и реальный Tuya status mapping.
 2. Проверить Python 3.13+ и Node toolchain, доступ к PostgreSQL/Redis в Linux/Docker среде. Выбрать поддерживаемые версии и создавать lockfiles только реальным resolver.
 3. Создать Python workspace API/agent, frontend workspace, правила импортов и CI. Production-конфигурация не использует SQLite, memory queue или фальшивый access provider.
 4. Оформить полный OpenAPI для первой вертикали, DTO errors/operations и generated TS types. Статусы enum и serialization contract проверять автоматически.
@@ -39,6 +39,6 @@ UI разрабатывается вместе с вертикальными с�
 
 ## Definition of done для продукта
 
-Все действующие критерии §74 и сценарии §75 с изменениями DEC-01…17 подтверждены, обязательные load/network tests §§64–65 выполнены на согласованной конфигурации. Нет открытых критических решений по питанию, identity, данным и сетевой защите. Проверены отключение backup endpoints/jobs, reconnect, частичный provisioning, offline node, запрет автопотери данных, безопасная очистка и передача ownership/quotas. Администратор получает инструкции эксплуатации и восстановления.
+Все действующие критерии §74 и сценарии §75 с изменениями DEC-01…18 подтверждены, обязательные load/network tests §§64–65 выполнены на согласованной конфигурации. Нет открытых критических решений по питанию, identity, данным и сетевой защите. Проверены отключение backup endpoints/jobs, reconnect, частичный provisioning, offline node, запрет автопотери данных, безопасная очистка и передача ownership/quotas. Администратор получает инструкции эксплуатации и восстановления.
 
 Не принимать «работает fake provider», «30 async HTTP запросов» или «успешный docker build» за доказательство 30 работающих гостевых систем и браузерных сессий. Целевые длительности запуска, RPO/RTO и допустимые задержки согласуются по измерениям и требованиям пользователя, а не выдумываются.
