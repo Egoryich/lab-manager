@@ -110,3 +110,26 @@ systemctl is-active --quiet lab-node-storage-snapshot.timer
 ```
 
 Во время подтверждённой установки использовался trap, возвращающий предыдущий symlink и агент при ошибке; приведённые команды описывают успешный путь и не заменяют процедуру отката. Сразу после `enable --now` таймер мог повторно запустить oneshot, поэтому поле `NEXT` в мгновенном выводе было пустым. Историческая ошибка агента после загрузки сервера завершилась его автоматическим перезапуском; её причина требует отдельной диагностики, если повторится.
+
+### Периодический сбор и доставка подтверждены
+
+Последующая проверка показала `active` у агента и таймера, `Result=success`, `ExecMainStatus=0` у oneshot. Журнал подтвердил четыре последовательных успешных запуска примерно через 50 секунд, а список таймеров показал следующий запуск. `read_snapshot()` от пользователя агента прочитал два пула, ноль томов и `admission_ready=False`.
+
+На VPS существующий worker через `load_endpoints()` и mTLS `fetch()` получил оба локальных thin pool (по нулю томов), metadata 1.6% для `local-lvm` и 0.38% для `student-lvm`. Обычное файловое `local` по-прежнему имеет `thin_metadata_percent=null`. В ответе остались ограничения `NON_ATOMIC_OBSERVATION`, `ACL_FILTERING_POSSIBLE`, `DISK_COMMITMENTS_NOT_RECONCILED`, `NETWORK_AND_GATEWAY_NOT_VERIFIED`; `admission_ready=false`. Проверка доказывает доставку снимка, но не право на выделение ресурсов.
+
+Подтверждённые проверки без адресов и секретов:
+
+```bash
+# Proxmox
+systemctl is-active lab-node-agent.service lab-node-storage-snapshot.timer
+systemctl show --no-pager lab-node-storage-snapshot.service -p Result -p ExecMainStatus
+systemctl list-timers --all lab-node-storage-snapshot.timer --no-pager
+journalctl -u lab-node-storage-snapshot.service -n 12 --no-pager
+runuser -u lab-node-agent -- /opt/lab-manager-node/current/venv/bin/python -c \
+  'from lab_node_agent.host_storage import read_snapshot; s=read_snapshot(); print(len(s["thin_pools"]), sum(len(p["volumes"]) for p in s["thin_pools"]), s["admission_ready"])'
+
+# VPS, внутри /opt/lab-manager/repo
+docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
+  /app/.venv/bin/python -c \
+  'from lab_manager.node_transport import load_endpoints,fetch; d,_=fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0]); s=d["sample"]; print([(p["storage"],len(p["volumes"])) for p in s.get("local_thin_pools",[])],s["admission_ready"])'
+```
