@@ -10,7 +10,7 @@ Group=lab-node-agent
 StateDirectory=lab-manager-node
 StateDirectoryMode=0750
 ExecStart=/opt/lab-manager-node/current/venv/bin/python -m lab_node_agent.host_storage --write-snapshot
-TimeoutStartSec=35
+TimeoutStartSec=75
 UMask=0077
 Environment=PYTHONDONTWRITEBYTECODE=1
 NoNewPrivileges=true

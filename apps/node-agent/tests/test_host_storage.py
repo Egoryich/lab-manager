@@ -13,6 +13,7 @@ from lab_node_agent.host_storage import (
     read_snapshot,
     storage_pools,
     summarize,
+    summarize_backing,
 )
 
 CONFIG = """
@@ -83,6 +84,24 @@ ROWS = [
         "origin": "",
     },
 ]
+PVS_ROWS = [
+    {
+        "pv_name": "/dev/sda",
+        "vg_name": "student-lvm",
+        "pv_size": "500103643136",
+        "pv_free": "125829120",
+    },
+    {"pv_name": "/dev/sdb3", "vg_name": "pve", "pv_size": "118107406336", "pv_free": "9663676416"},
+]
+VGS_ROWS = [
+    {"vg_name": "pve", "vg_size": "118107406336", "vg_free": "9663676416", "pv_count": "1"},
+    {
+        "vg_name": "student-lvm",
+        "vg_size": "500103643136",
+        "vg_free": "125829120",
+        "pv_count": "1",
+    },
+]
 
 
 def test_pool_mapping_and_virtual_volumes_remain_unverified():
@@ -121,6 +140,20 @@ def test_duplicate_or_malformed_storage_cannot_be_silently_skipped():
         parse_lvs_report(json.dumps({"report": []}).encode())
 
 
+def test_pv_vg_mapping_is_observed_but_not_admission_evidence():
+    pools = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
+    student = pools[1]
+    assert student["backing"]["physical_volumes"] == [
+        {"name": "/dev/sda", "size_bytes": 500103643136, "unallocated_bytes": 125829120}
+    ]
+    assert student["backing"]["vg_unallocated_bytes"] == 125829120
+    assert student["backing"]["physical_backing_reconciled"] is False
+    bad = [dict(row) for row in VGS_ROWS]
+    bad[1]["pv_count"] = "2"
+    with pytest.raises(StorageProbeError, match="LVM_BACKING_MISMATCH"):
+        summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, bad)
+
+
 def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
     from lab_node_agent import host_storage
 
@@ -132,14 +165,21 @@ def test_local_command_is_fixed_and_errors_do_not_echo_lvm_output(monkeypatch):
 
     def run(command, **kwargs):
         calls.append((command, kwargs))
-        return SimpleNamespace(returncode=0, stdout=json.dumps({"report": [{"lv": ROWS}]}).encode())
+        section, rows = {
+            host_storage.LVS: ("lv", ROWS),
+            host_storage.PVS: ("pv", PVS_ROWS),
+            host_storage.VGS: ("vg", VGS_ROWS),
+        }[command]
+        return SimpleNamespace(
+            returncode=0, stdout=json.dumps({"report": [{section: rows}]}).encode()
+        )
 
     monkeypatch.setattr(host_storage.subprocess, "run", run)
     report = collect_local()
     assert report["admission_ready"] is False
     assert report["thin_pools"][1]["volumes"][0]["name"] == "vm-201-disk-0"
-    assert calls[0][0] == host_storage.LVS
-    assert calls[0][1]["timeout"] == 20
+    assert [call[0] for call in calls] == [host_storage.LVS, host_storage.PVS, host_storage.VGS]
+    assert all(call[1]["timeout"] == 20 for call in calls)
     monkeypatch.setattr(
         host_storage.subprocess,
         "run",
@@ -176,6 +216,14 @@ def test_snapshot_rejects_untrusted_file_and_expired_data(tmp_path, monkeypatch)
     assert read_snapshot(path)["thin_pools"][1]["volumes"][0]["ownership"] == "UNVERIFIED"
     with pytest.raises(StorageProbeError, match="SNAPSHOT_STALE"):
         read_snapshot(path, now=datetime.now(UTC) + timedelta(minutes=3))
+    report["thin_pools"] = summarize_backing(summarize(CONFIG, ROWS), PVS_ROWS, VGS_ROWS)
+    path.write_text(json.dumps(report))
+    assert read_snapshot(path)["thin_pools"][1]["backing"]["physical_backing_reconciled"] is False
+    report["thin_pools"][1]["backing"]["vg_unallocated_bytes"] += 1
+    path.write_text(json.dumps(report))
+    with pytest.raises(StorageProbeError, match="SNAPSHOT_INVALID"):
+        read_snapshot(path)
+    path.write_text(json.dumps(report | {"thin_pools": summarize(CONFIG, ROWS)}))
     monkeypatch.setattr(
         host_storage.os,
         "fstat",

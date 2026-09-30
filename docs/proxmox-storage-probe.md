@@ -138,7 +138,7 @@ docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
 
 Пользователь выполнил read-only `pvs` и `vgs` в JSON. `student-lvm` имеет один PV `/dev/sda` размером 500 103 643 136 байт и 125 829 120 байт свободного **невыделенного места VG**. `pve` имеет один PV `/dev/sdb3` размером 118 107 406 336 байт и 9 663 676 416 байт свободного места VG. Ранее подтверждённый thin pool `student-lvm` имеет размер 489 970 204 672 байта. Свободные 125 МБ VG **не являются** свободным местом внутри thin pool и не должны использоваться для расчёта вместимости учебных машин.
 
-В присланном выводе команда `pvesm config student-lvm` завершилась ошибкой `unknown command`; она не меняла конфигурацию. Эта команда была ошибочно предложена в чате. По [документации Proxmox](https://pve.proxmox.com/pve-docs/pvesm.1.html) конфигурация storage хранится в `/etc/pve/storage.cfg`, а [`pvesh`](https://github.com/proxmox/pve-docs/blob/master/pvesh.adoc) даёт доступ к API. Следующая read-only проверка должна использовать `pvesh get /storage --output-format json` и выводить только поля целевого storage; её результат на этом сервере ещё не подтверждён.
+В присланном выводе команда `pvesm config student-lvm` завершилась ошибкой `unknown command`; она не меняла конфигурацию. Эта команда была ошибочно предложена в чате. По [документации Proxmox](https://pve.proxmox.com/pve-docs/pvesm.1.html) конфигурация storage хранится в `/etc/pve/storage.cfg`, а [`pvesh`](https://github.com/proxmox/pve-docs/blob/master/pvesh.adoc) даёт доступ к API. Исправленная read-only команда `pvesh get /storage --output-format json` подтвердила для `student-lvm`: `type=lvmthin`, `vgname=student-lvm`, `thinpool=student-lvm`, `content=images,rootdir`, `nodes=pve`, без явного `disable`. Это согласуется с измеренным VG и thin pool.
 
 Подтверждённые команды без серийных номеров и секретов:
 
@@ -147,6 +147,14 @@ pvs --reportformat json --units b --nosuffix \
   -o pv_name,vg_name,pv_size,pv_free
 vgs --reportformat json --units b --nosuffix \
   -o vg_name,vg_size,vg_free,pv_count
+pvesh get /storage --output-format json |
+python3 -c 'import json,sys; rows=[{k:s.get(k) for k in ("storage","type","vgname","thinpool","content","nodes","disable")} for s in json.load(sys.stdin) if s.get("storage")=="student-lvm"]; assert len(rows)==1; print(json.dumps(rows[0],ensure_ascii=False))'
 ```
 
 Один PV на VG пока не доказывает пригодность storage для admission: остаются сверка устройства и thin pool, всех guest/snapshot-томов и постоянных обязательств Lab Manager. `physical_backing_reconciled` и `commitments_reconciled` остаются ложными.
+
+## Подготовка постоянной PV/VG-сверки (wheel 0.5.0)
+
+Следующий выпуск root-задачи получает отдельные read-only отчёты `lvs`, `pvs` и `vgs` с фиксированными аргументами. Для каждого настроенного thin pool он сопоставляет VG, число PV, размеры и невыделенное место; несоответствие или ошибка любого отчёта не публикует новый снимок. В JSON появляется диагностический `backing` с именами устройств, размерами PV/VG и неизменно ложным `physical_backing_reconciled`. Невыделенное место VG не складывается с доступным местом thin pool. mTLS-агент продолжает только читать файл, `admission_ready=false` сохраняется.
+
+Это ещё не подтверждение отдельного физического диска и не разрешение броней: следующим шагом нужны связь PV с блочным устройством, проверка состояния диска и учёт всех постоянных томов. Команды обновления 0.5.0 добавляются после CI и реального запуска на Proxmox.

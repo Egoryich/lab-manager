@@ -27,8 +27,29 @@ LVS = (
     "-o",
     "vg_name,lv_name,lv_size,data_percent,metadata_percent,lv_attr,pool_lv,origin",
 )
+PVS = (
+    "pvs",
+    "--reportformat",
+    "json",
+    "--units",
+    "b",
+    "--nosuffix",
+    "-o",
+    "pv_name,vg_name,pv_size,pv_free",
+)
+VGS = (
+    "vgs",
+    "--reportformat",
+    "json",
+    "--units",
+    "b",
+    "--nosuffix",
+    "-o",
+    "vg_name,vg_size,vg_free,pv_count",
+)
 IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}")
 LV_IDENTIFIER = re.compile(r"\[?[A-Za-z0-9][A-Za-z0-9_.+-]{0,127}\]?")
+DEVICE_PATH = re.compile(r"/dev/[A-Za-z0-9_.+/:=-]{1,255}")
 VOLUME_OWNER = re.compile(r"(?:vm|base)-(\d+)-.+")
 MAX_INPUT = 2 * 1024 * 1024
 SNAPSHOT = Path("/var/lib/lab-manager-node/storage.json")
@@ -48,6 +69,16 @@ def identifier(value):
 def lv_identifier(value):
     if not isinstance(value, str) or not LV_IDENTIFIER.fullmatch(value):
         raise StorageProbeError("INVALID_LVM_IDENTIFIER")
+    return value
+
+
+def device_path(value):
+    if (
+        not isinstance(value, str)
+        or not DEVICE_PATH.fullmatch(value)
+        or any(part in ("", ".", "..") for part in value[5:].split("/"))
+    ):
+        raise StorageProbeError("INVALID_PV_NAME")
     return value
 
 
@@ -100,7 +131,7 @@ def storage_pools(config):
     return pools
 
 
-def parse_lvs_report(raw):
+def parse_report(raw, section):
     if len(raw) > MAX_INPUT:
         raise StorageProbeError("LVM_REPORT_TOO_LARGE")
     try:
@@ -108,12 +139,68 @@ def parse_lvs_report(raw):
         reports = data["report"]
         if not isinstance(reports, list) or len(reports) != 1:
             raise ValueError("Invalid report count")
-        rows = reports[0]["lv"]
+        rows = reports[0][section]
         if not isinstance(rows, list) or len(rows) > 10000:
             raise ValueError("Invalid LV count")
         return rows
     except (KeyError, TypeError, ValueError) as error:
         raise StorageProbeError("LVM_REPORT_INVALID") from error
+
+
+def parse_lvs_report(raw):
+    return parse_report(raw, "lv")
+
+
+def summarize_backing(pools, pv_rows, vg_rows):
+    """Correlate reported LVM objects without claiming physical admission."""
+    groups = {}
+    for row in vg_rows:
+        name = identifier(row.get("vg_name"))
+        if name in groups:
+            raise StorageProbeError("DUPLICATE_VG")
+        size = nonnegative_integer(row.get("vg_size"))
+        free = nonnegative_integer(row.get("vg_free"))
+        count = nonnegative_integer(row.get("pv_count"))
+        if size <= 0 or free > size or count < 1:
+            raise StorageProbeError("VG_REPORT_INVALID")
+        groups[name] = {"size": size, "free": free, "pv_count": count}
+    physical = {}
+    seen = set()
+    for row in pv_rows:
+        name = device_path(row.get("pv_name"))
+        vg_raw = row.get("vg_name")
+        if not vg_raw:
+            continue
+        vg = identifier(vg_raw)
+        if name in seen:
+            raise StorageProbeError("DUPLICATE_PV")
+        seen.add(name)
+        size = nonnegative_integer(row.get("pv_size"))
+        free = nonnegative_integer(row.get("pv_free"))
+        if size <= 0 or free > size:
+            raise StorageProbeError("PV_REPORT_INVALID")
+        physical.setdefault(vg, []).append(
+            {"name": name, "size_bytes": size, "unallocated_bytes": free}
+        )
+    for pool in pools:
+        vgname = pool["vgname"]
+        group = groups.get(vgname)
+        devices = sorted(physical.get(vgname, []), key=lambda item: item["name"])
+        if (
+            group is None
+            or len(devices) != group["pv_count"]
+            or pool["pool_size_bytes"] > group["size"]
+            or sum(item["size_bytes"] for item in devices) < group["size"]
+            or sum(item["unallocated_bytes"] for item in devices) != group["free"]
+        ):
+            raise StorageProbeError("LVM_BACKING_MISMATCH")
+        pool["backing"] = {
+            "vg_size_bytes": group["size"],
+            "vg_unallocated_bytes": group["free"],
+            "physical_volumes": devices,
+            "physical_backing_reconciled": False,
+        }
+    return pools
 
 
 def summarize(config, rows):
@@ -178,21 +265,28 @@ def collect_local():
         raise StorageProbeError("ROOT_REQUIRED")
     try:
         config = STORAGE_CONFIG.read_text(encoding="utf-8")
-        run = subprocess.run(
-            LVS,
-            capture_output=True,
-            check=False,
-            timeout=20,
-            env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
-        )
+        reports = []
+        for command in (LVS, PVS, VGS):
+            run = subprocess.run(
+                command,
+                capture_output=True,
+                check=False,
+                timeout=20,
+                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
+            )
+            if run.returncode != 0:
+                raise StorageProbeError("LVM_COLLECTION_FAILED")
+            reports.append(run.stdout)
     except (OSError, UnicodeError, subprocess.TimeoutExpired) as error:
         raise StorageProbeError("LVM_COLLECTION_FAILED") from error
-    if run.returncode != 0:
-        raise StorageProbeError("LVM_COLLECTION_FAILED")
     return {
         "schema_version": 1,
         "sample_finished_at": datetime.now(UTC).isoformat(),
-        "thin_pools": summarize(config, parse_lvs_report(run.stdout)),
+        "thin_pools": summarize_backing(
+            summarize(config, parse_lvs_report(reports[0])),
+            parse_report(reports[1], "pv"),
+            parse_report(reports[2], "vg"),
+        ),
         "admission_ready": False,
     }
 
@@ -271,6 +365,37 @@ def read_snapshot(path=SNAPSHOT, now=None):
             nonnegative_integer(pool["pool_size_bytes"])
             percent(pool["data_percent"])
             percent(pool["metadata_percent"])
+            backing = pool.get("backing")
+            if backing is not None:
+                if (
+                    not isinstance(backing, dict)
+                    or backing.get("physical_backing_reconciled") is not False
+                    or not isinstance(backing.get("physical_volumes"), list)
+                    or len(backing["physical_volumes"]) > 128
+                ):
+                    raise ValueError("Invalid backing")
+                nonnegative_integer(backing["vg_size_bytes"])
+                nonnegative_integer(backing["vg_unallocated_bytes"])
+                if (
+                    not backing["physical_volumes"]
+                    or backing["vg_size_bytes"] < pool["pool_size_bytes"]
+                ):
+                    raise ValueError("Invalid backing size")
+                seen_devices = set()
+                for device in backing["physical_volumes"]:
+                    device_path(device["name"])
+                    nonnegative_integer(device["size_bytes"])
+                    nonnegative_integer(device["unallocated_bytes"])
+                    if device["name"] in seen_devices:
+                        raise ValueError("Duplicate PV")
+                    seen_devices.add(device["name"])
+                if (
+                    sum(device["size_bytes"] for device in backing["physical_volumes"])
+                    < backing["vg_size_bytes"]
+                    or sum(device["unallocated_bytes"] for device in backing["physical_volumes"])
+                    != backing["vg_unallocated_bytes"]
+                ):
+                    raise ValueError("Invalid backing totals")
             if not isinstance(pool["volumes"], list) or len(pool["volumes"]) > 10000:
                 raise ValueError("Invalid volumes")
             for volume in pool["volumes"]:
