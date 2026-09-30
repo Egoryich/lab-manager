@@ -49,6 +49,21 @@ systemctl is-active lab-node-agent.service lab-node-storage-snapshot.timer
 
 `inactive (dead)` для oneshot нормально; успех определяется `Result=success` и `ExecMainStatus=0`. Для немедленной проверки используйте `systemctl start lab-node-update.service`. При отсутствии нового выпуска состояние не меняется. После обновления подтвердите на VPS свежий mTLS-снимок узла, поскольку локальная проверка сервиса не доказывает доставку данных на VPS.
 
+На VPS из каталога репозитория:
+
+```bash
+docker compose --env-file .env.vps -f infra/vps/compose.yml exec -T worker \
+  /app/.venv/bin/python -c '
+from lab_manager.node_transport import load_endpoints, fetch
+data, _ = fetch(load_endpoints("/run/lab-node-transport/nodes.json")[0])
+sample = data["sample"]
+print("Узел:", data["node_id"])
+print("Снимок:", sample["sample_finished_at"])
+print("Хранилища:", [p["storage"] for p in sample["local_thin_pools"]])
+print("Допуск машин:", sample["admission_ready"])
+'
+```
+
 Перед сменой версии updater сохраняет `pending.json`. Если новый агент не запустился или не записал читаемый снимок, он возвращает прежний symlink, перезапускает старую службу и блокирует неудачный SHA. При прерывании процесса следующий запуск разбирает pending-состояние; неизвестное состояние оставляется для ручного восстановления. Updater не удаляет старые releases и не выполняет автоматическую очистку диска. Не удаляйте текущий или предыдущий каталог выпуска.
 
-Команда первой установки и её результат помечаются подтверждёнными только после фактического вывода с Proxmox. До этого руководство описывает подготовленную процедуру.
+Первая установка подтверждена на Proxmox для выпуска `edc3f88ffee4f7476a3575dc6a0f275cbbfc3b67`: внешний digest `SHA256SUMS` и все файлы релиза прошли проверку, wheel установился в отдельный venv, рабочий выпуск `ec27a8d5121fc53f5237239e344020342a8a01d5` принят как исходный, таймер включён. После фонового обновления активный SHA стал `edc3f88ffee4f7476a3575dc6a0f275cbbfc3b67`; служба updater завершилась с `Result=success`, `ExecMainStatus=0`, агент и таймер снимков активны. VPS worker после обновления успешно получил свежий снимок по mTLS с обоими thin-хранилищами (`local-lvm` и `student-lvm`). Допуск учебных машин остаётся `false` до завершения проверок вместимости и сети.
