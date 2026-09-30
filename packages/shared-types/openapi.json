@@ -3745,6 +3745,36 @@
   },
   "components": {
     "schemas": {
+      "BridgeObservation": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "ports": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Ports"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "active",
+          "ports"
+        ],
+        "title": "BridgeObservation"
+      },
       "EffectivePolicy": {
         "properties": {
           "revision_id": {
@@ -4387,6 +4417,20 @@
             ],
             "title": "Storages"
           },
+          "network_bridges": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BridgeObservation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Network Bridges"
+          },
           "admission_ready": {
             "type": "boolean",
             "title": "Admission Ready",
@@ -4404,7 +4448,8 @@
           "host",
           "guest_count",
           "storage_count",
-          "storages"
+          "storages",
+          "network_bridges"
         ],
         "title": "NodeView"
       },

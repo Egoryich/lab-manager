@@ -108,6 +108,39 @@ export function NodePanel() {
               </div>
             </div>
           )}
+          {node.network_bridges && (
+            <div className="resource-estimate">
+              <h3>Сетевые мосты</h3>
+              <p className="muted">
+                Подключения, обнаруженные Proxmox. Отсутствие физического порта не подтверждает
+                изоляцию учебных машин.
+              </p>
+              {node.network_bridges.length === 0 ? (
+                <p>Мосты не найдены.</p>
+              ) : (
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Мост</th>
+                        <th>Состояние</th>
+                        <th>Подключённые порты</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {node.network_bridges.map((bridge) => (
+                        <tr key={bridge.name}>
+                          <td>{bridge.name}</td>
+                          <td>{bridge.active ? 'Активен' : 'Неактивен'}</td>
+                          <td>{bridge.ports.join(', ') || 'Нет'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
           {!node.admission_ready && (
             <p className="muted">Запуск занятий пока заблокирован проверками ресурсов и сети.</p>
           )}

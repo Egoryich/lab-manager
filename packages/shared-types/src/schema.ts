@@ -489,6 +489,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BridgeObservation */
+        BridgeObservation: {
+            /** Name */
+            name: string;
+            /** Active */
+            active: boolean;
+            /** Ports */
+            ports: string[];
+        };
         /** EffectivePolicy */
         EffectivePolicy: {
             /** Revision Id */
@@ -718,6 +727,8 @@ export interface components {
             storage_count: number | null;
             /** Storages */
             storages: components["schemas"]["StorageView"][] | null;
+            /** Network Bridges */
+            network_bridges: components["schemas"]["BridgeObservation"][] | null;
             /**
              * Admission Ready
              * @default false

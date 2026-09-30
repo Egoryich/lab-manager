@@ -104,6 +104,13 @@ class HostObservation(BaseModel):
     uptime_seconds: int = Field(ge=0)
 
 
+class BridgeObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=256)
+    active: bool
+    ports: list[str] = Field(max_length=64)
+
+
 def validate_observation(data, endpoint, now=None):
     result = Observation.model_validate(data)
     sample = result.sample
@@ -122,6 +129,16 @@ def validate_observation(data, endpoint, now=None):
     HostObservation.model_validate(sample["host"])
     for key in ("storages", "guests", "limitations"):
         if not isinstance(sample.get(key), list) or len(sample[key]) > 10000:
+            raise NodeTransportError("INVALID_SAMPLE")
+    if "network_bridges" in sample:
+        bridges = sample["network_bridges"]
+        if not isinstance(bridges, list) or len(bridges) > 256:
+            raise NodeTransportError("INVALID_SAMPLE")
+        try:
+            parsed = [BridgeObservation.model_validate(item) for item in bridges]
+        except ValueError as error:
+            raise NodeTransportError("INVALID_SAMPLE") from error
+        if len({bridge.name for bridge in parsed}) != len(parsed):
             raise NodeTransportError("INVALID_SAMPLE")
     return result.model_dump(mode="json"), end
 

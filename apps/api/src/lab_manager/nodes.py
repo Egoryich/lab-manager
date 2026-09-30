@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from lab_manager.dependencies import DB, Actor, require_role
 from lab_manager.models import Base
-from lab_manager.node_transport import HostObservation, NodeTransportError, fetch
+from lab_manager.node_transport import BridgeObservation, HostObservation, NodeTransportError, fetch
 
 
 class NodeObservation(Base):
@@ -37,6 +37,7 @@ class NodeView(BaseModel):
     guest_count: int | None
     storage_count: int | None
     storages: list["StorageView"] | None
+    network_bridges: list[BridgeObservation] | None
     admission_ready: bool = False
 
 
@@ -156,6 +157,9 @@ async def list_nodes(db: DB, actor: Actor):
                 guest_count=len(sample["guests"]) if sample else None,
                 storage_count=len(sample["storages"]) if sample else None,
                 storages=storages,
+                network_bridges=sample.get("network_bridges")
+                if sample and "NETWORK_INVENTORY_UNAVAILABLE" not in sample["limitations"]
+                else None,
             )
         )
     return result

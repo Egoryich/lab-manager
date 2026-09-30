@@ -31,6 +31,10 @@ test('administrator sees empty inventory and clearly marked stale observations',
           },
           guest_count: 2,
           storage_count: 3,
+          network_bridges: [
+            { name: 'vmbr0', active: true, ports: ['nic0'] },
+            { name: 'vmbr1', active: true, ports: [] },
+          ],
           storages: [
             {
               name: 'student-lvm',
@@ -52,6 +56,8 @@ test('administrator sees empty inventory and clearly marked stale observations',
   await expect(page.getByText('Данные устарели', { exact: true })).toBeVisible();
   await expect(page.getByText('student-lvm')).toBeVisible();
   await expect(page.getByText('0.38%')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Сетевые мосты' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'vmbr1' })).toBeVisible();
   await expect(page.getByText(/Это не означает, что сервер выключен/)).toBeVisible();
   await page.screenshot({ path: 'artifacts/nodes-admin.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
