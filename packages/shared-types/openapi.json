@@ -5156,6 +5156,31 @@
               }
             ],
             "title": "Observed Volume Count"
+          },
+          "physical_volumes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Volumes"
+          },
+          "physical_backing_reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Backing Reconciled"
           }
         },
         "type": "object",
@@ -5167,7 +5192,9 @@
           "used_bytes",
           "available_bytes",
           "thin_metadata_percent",
-          "observed_volume_count"
+          "observed_volume_count",
+          "physical_volumes",
+          "physical_backing_reconciled"
         ],
         "title": "StorageView"
       },

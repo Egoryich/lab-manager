@@ -57,7 +57,8 @@ export function NodePanel() {
               <h3>Хранилища</h3>
               <p className="muted">
                 Наблюдаемые значения Proxmox. Свободное место здесь не означает доступный лимит
-                для новых машин.
+                для новых машин. PV — устройства, которые LVM связывает с пулом; их проверка
+                для запуска занятий ещё не завершена.
               </p>
               <div className="table-scroll">
                 <table>
@@ -69,6 +70,8 @@ export function NodePanel() {
                       <th>Свободно</th>
                       <th>Thin metadata</th>
                       <th>Томов найдено</th>
+                      <th>PV по LVM</th>
+                      <th>Проверка PV</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -90,6 +93,14 @@ export function NodePanel() {
                             : `${storage.thin_metadata_percent}%`}
                         </td>
                         <td>{storage.observed_volume_count ?? '—'}</td>
+                        <td>{storage.physical_volumes?.join(', ') || '—'}</td>
+                        <td>
+                          {storage.physical_backing_reconciled === null
+                            ? 'Нет данных'
+                            : storage.physical_backing_reconciled
+                              ? 'Завершена'
+                              : 'Не завершена'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

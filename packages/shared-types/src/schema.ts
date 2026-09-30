@@ -973,6 +973,10 @@ export interface components {
             thin_metadata_percent: number | null;
             /** Observed Volume Count */
             observed_volume_count: number | null;
+            /** Physical Volumes */
+            physical_volumes: string[] | null;
+            /** Physical Backing Reconciled */
+            physical_backing_reconciled: boolean | null;
         };
         /** TemplateCreate */
         TemplateCreate: {

@@ -32,7 +32,15 @@ def sample(endpoint, now):
                 }
             ],
             "local_thin_pools": [
-                {"storage": "student-lvm", "volumes": [], "ownership_reconciled": False}
+                {
+                    "storage": "student-lvm",
+                    "volumes": [],
+                    "ownership_reconciled": False,
+                    "backing": {
+                        "physical_volumes": [{"name": "/dev/sda"}],
+                        "physical_backing_reconciled": False,
+                    },
+                }
             ],
             "guests": [],
             "limitations": ["DISK_COMMITMENTS_NOT_RECONCILED"],
@@ -65,6 +73,8 @@ async def test_node_privacy_failure_preserves_snapshot_and_ordering(
         assert row["status"] == "FRESH" and row["host"]["logical_cpus"] == 24
         assert row["storages"][0]["thin_metadata_percent"] == 0.38
         assert row["storages"][0]["observed_volume_count"] == 0
+        assert row["storages"][0]["physical_volumes"] == ["/dev/sda"]
+        assert row["storages"][0]["physical_backing_reconciled"] is False
         assert row["admission_ready"] is False
         await store_observation(
             app.state.sessions, endpoint, now + timedelta(seconds=1), error="NODE_CONNECTION_FAILED"
@@ -78,6 +88,7 @@ async def test_node_privacy_failure_preserves_snapshot_and_ordering(
         assert row["error_code"] == "NODE_CONNECTION_FAILED"
         old = now - timedelta(minutes=3)
         old_payload = sample(endpoint, old)
+        old_payload["sample"]["local_thin_pools"][0].pop("backing")
         await store_observation(
             app.state.sessions,
             endpoint,
@@ -85,7 +96,10 @@ async def test_node_privacy_failure_preserves_snapshot_and_ordering(
             payload=old_payload,
             sampled_at=old,
         )
-        assert (await admin.get("/api/admin/nodes")).json()[0]["status"] == "STALE"
+        row = (await admin.get("/api/admin/nodes")).json()[0]
+        assert row["status"] == "STALE"
+        assert row["storages"][0]["physical_volumes"] is None
+        assert row["storages"][0]["physical_backing_reconciled"] is None
 
 
 async def test_reject_wrong_identity_stale_and_naive_sample():

@@ -49,6 +49,21 @@ class StorageView(BaseModel):
     available_bytes: int | None
     thin_metadata_percent: float | None
     observed_volume_count: int | None
+    physical_volumes: list[str] | None
+    physical_backing_reconciled: bool | None
+
+
+def storage_view(item: dict, local_pools: dict) -> StorageView:
+    pool = local_pools.get(item["name"])
+    backing = pool.get("backing") if pool else None
+    return StorageView(
+        **item,
+        observed_volume_count=len(pool["volumes"]) if pool else None,
+        physical_volumes=[device["name"] for device in backing["physical_volumes"]]
+        if backing
+        else None,
+        physical_backing_reconciled=backing["physical_backing_reconciled"] if backing else None,
+    )
 
 
 async def store_observation(
@@ -123,17 +138,7 @@ async def list_nodes(db: DB, actor: Actor):
             {item["storage"]: item for item in sample.get("local_thin_pools", [])} if sample else {}
         )
         storages = (
-            [
-                StorageView(
-                    **item,
-                    observed_volume_count=len(local_pools[item["name"]]["volumes"])
-                    if item["name"] in local_pools
-                    else None,
-                )
-                for item in sample["storages"]
-            ]
-            if sample
-            else None
+            [storage_view(item, local_pools) for item in sample["storages"]] if sample else None
         )
         result.append(
             NodeView(
