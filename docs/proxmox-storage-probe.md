@@ -471,3 +471,27 @@ vgs --reportformat json --units b --nosuffix \
 ```
 
 В подготовленном wheel 0.7.0 root-задача добавляет UUID в постоянный снимок и отклоняет отсутствующие, неверные и повторные UUID. Это позволит позднее привязать storage policy к устойчивой идентичности PV/VG и обнаруживать подмену диска после перезагрузки. Пока UUID используются только для диагностики: `physical_backing_reconciled=false` и `admission_ready=false`; CPU/RAM/диск не резервируются по этому наблюдению.
+
+### Проверенная подготовка wheel 0.7.0
+
+Linux CI завершился успешно. На Proxmox загружены wheel, systemd units, PKI-скрипт и `SHA256SUMS`; отдельно проверен опубликованный SHA-256 самого манифеста, затем все перечисленные в нём файлы. Из wheel создано отдельное виртуальное окружение, установлен `lab-node-agent==0.7.0`. Прямой read-only сбор с хоста подтвердил UUID каждого PV/VG и сохранил `admission_ready=false`. Работающий агент при этой проверке не переключался.
+
+Повторяемые команды проверки после загрузки артефактов (значение ожидаемого SHA-256 манифеста берётся из доверенного выпуска):
+
+```bash
+printf '%s  %s\n' "$MANIFEST_SHA256" SHA256SUMS | sha256sum --check --strict
+sha256sum --check --strict SHA256SUMS
+python3 -m venv "$stage/venv"
+"$stage/venv/bin/python" -m pip --disable-pip-version-check install \
+  --no-index --no-deps "$stage/lab_node_agent-0.7.0-py3-none-any.whl"
+"$stage/venv/bin/python" -m lab_node_agent.host_storage |
+python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+assert all(p["backing"]["vg_uuid"] and
+           all(pv["pv_uuid"] for pv in p["backing"]["physical_volumes"])
+           for p in s["thin_pools"])
+assert s["admission_ready"] is False
+print("LVM UUIDs present; admission remains disabled")
+'
+```
