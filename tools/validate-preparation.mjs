@@ -28,8 +28,8 @@ try {
   const buildGates = new Set([...read('docs/development.md').matchAll(/BUILD-\d{2}/g)].map(m => m[0]));
   const amendments = json('docs/requirements-updates.json');
   const decisionIds = new Set([...read('docs/decisions.md').matchAll(/^\| (DEC-\d{2}) \|/gm)].map(m => m[1]));
-  check(decisionIds.size === 18 && amendments.decisions.length === 18, 'Expected 18 user decisions and amendment mappings.');
-  check(new Set(amendments.decisions.map(d => d.id)).size === 18, 'Duplicate user decision mappings.');
+  check(decisionIds.size === 17 && amendments.decisions.length === 17, 'Expected 17 user decisions and amendment mappings.');
+  check(new Set(amendments.decisions.map(d => d.id)).size === 17, 'Duplicate user decision mappings.');
   for (const decision of amendments.decisions) {
     check(decisionIds.has(decision.id), `Unknown decision ${decision.id}.`);
     check(exists(decision.design_document), `Missing document for ${decision.id}.`);
@@ -90,7 +90,7 @@ try {
     }
   }
   if (failures.length) throw new Error(failures.join('\n'));
-  console.log(`PASS: source SHA-256 verified; 76 original sections + ${decisionIds.size} decisions mapped; 60 acceptance IDs and ${buildGates.size} build gates; ${requiredRoutes.length} original API routes; 20 permission names; ${componentDirs.length} component directories; ${files.length} Markdown files; ${localLinks} local links resolve.`);
+  console.log(`PASS: source SHA-256 verified; 76 original sections + 17 decisions mapped; 60 acceptance IDs and ${buildGates.size} build gates; ${requiredRoutes.length} original API routes; 20 permission names; ${componentDirs.length} component directories; ${files.length} Markdown files; ${localLinks} local links resolve.`);
   console.log('Scope: specification traceability and documents only; see docs/implementation-status.md for executable test evidence.');
 } catch (error) {
   console.error(`FAIL: ${error.message}`);
