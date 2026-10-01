@@ -125,7 +125,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             async with app.state.engine.connect() as connection:
                 revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                if revision != "0006_ledger":
+                if revision != "0007_network":
                     raise Problem(503, "MIGRATION_REQUIRED", "Требуется обновить схему базы.")
             await app.state.redis.ping()
         except (SQLAlchemyError, RedisError) as error:
