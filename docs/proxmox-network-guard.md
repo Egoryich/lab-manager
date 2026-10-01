@@ -1,6 +1,6 @@
 # Защита будущих учебных мостов
 
-Статус на 01.10.2026: исходники подготовлены, постоянные правила на Proxmox ещё не установлены. Рабочие `vmbr0`, `vmbr1` и Tailscale не меняются.
+Статус на 01.10.2026: пользователь установил deny-only правила на Proxmox из выпуска `dcb291738979b158c1894a990af74fe8acfe2e99`. Три скачанных файла прошли SHA-256 проверку, установщик завершился сообщением `Deny-only guard installed; no guest bridge was attached`, а systemd показал `ActiveState=active`, `Result=success`, `ExecMainStatus=0`. Это подтверждает первое применение; восстановление после reboot и сохранность при reload других firewall-служб ещё не проверены. Рабочие `vmbr0`, `vmbr1` и Tailscale не менялись установщиком.
 
 Подтверждены два независимых одноразовых теста на Proxmox: `inet input` блокировал пакет к host, `inet forward` — маршрутизируемый пакет между двумя временными мостами, `bridge forward` — кадры между двумя портами одного временного моста. Во всех тестах связь проходила до добавления правила и прекращалась после него. В L2-тесте пользователь дополнительно подтвердил удаление временного bridge. Это проверки механизма, а не готовая политика для учебных гостей.
 
@@ -21,6 +21,32 @@ nft list table inet lab_manager
 nft list table bridge lab_manager_l2
 ```
 
-Эти команды предполагают локальный checkout; для установленного узла передавать те же три файла с закреплённого коммита после SHA-256 проверки. Не включать штатный `nftables.service` с его `/etc/nftables.conf` без отдельного разбора: чужой полный reload может удалить таблицы Lab Manager.
+Эти команды предполагают локальный checkout. На реальном узле успешно применён следующий способ без checkout: скачать три файла с закреплённого коммита, проверить SHA-256 и вызвать тот же установщик. Исторические SHA-256 этого выпуска: `lab-network-guard.nft` — `1e699346bbe28f0a0b1d97828a83369ee449770714e5523085026fc374ce9118`, `lab-node-network-guard.service` — `68282a2dfb265a3001179dc9bfd8d817dbf39243672cc5b8815e4d942b29c69f`, `install-node-network-guard.sh` — `ab9944804a64204592f4bd98aeae04a7d4c5805c0847d7ae88656bf639abdc61`.
+
+```bash
+rev='dcb291738979b158c1894a990af74fe8acfe2e99'
+dir=$(mktemp -d)
+trap 'rm -f "$dir/lab-network-guard.nft" "$dir/lab-node-network-guard.service" "$dir/install-node-network-guard.sh"; rmdir "$dir"' EXIT
+for path in infra/proxmox/lab-network-guard.nft \
+            infra/proxmox/lab-node-network-guard.service \
+            tools/install-node-network-guard.sh; do
+  curl --fail --silent --show-error --location --retry 3 \
+    --proto '=https' --proto-redir '=https' \
+    -o "$dir/${path##*/}" \
+    "https://raw.githubusercontent.com/Egoryich/lab-manager/$rev/$path"
+done
+printf '%s  %s\n' \
+  '1e699346bbe28f0a0b1d97828a83369ee449770714e5523085026fc374ce9118' "$dir/lab-network-guard.nft" \
+  '68282a2dfb265a3001179dc9bfd8d817dbf39243672cc5b8815e4d942b29c69f' "$dir/lab-node-network-guard.service" \
+  'ab9944804a64204592f4bd98aeae04a7d4c5805c0847d7ae88656bf639abdc61' "$dir/install-node-network-guard.sh" |
+  sha256sum --check --strict
+bash "$dir/install-node-network-guard.sh" \
+  "$dir/lab-network-guard.nft" \
+  "$dir/lab-node-network-guard.service"
+systemctl show --no-pager lab-node-network-guard.service \
+  -p ActiveState -p Result -p ExecMainStatus
+```
+
+Команда выполняется под root. Она предназначена для первой установки; повторное выполнение штатно остановится на проверке существующей службы. Не включать `nftables.service` с его `/etc/nftables.conf` без отдельного разбора: чужой полный reload может удалить таблицы Lab Manager.
 
 Остаётся проверить сохранение после reboot и после reload firewall, состояние таблиц при drift, правила против spoofing, реальные LXC/VM, Guacamole и Internet on/off. До этих проверок `NETWORK_AND_GATEWAY_NOT_VERIFIED` и `admission_ready=false` сохраняются.
