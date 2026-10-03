@@ -29,6 +29,7 @@ from lab_manager.node_transport import load_endpoints
 from lab_manager.nodes import poll_forever
 from lab_manager.operation_models import Operation, WorkerHeartbeat
 from lab_manager.operations import VALIDATE, ValidationResult, event
+from lab_manager.schema import CURRENT_SCHEMA_REVISION
 
 logger = logging.getLogger("lab_manager.worker")
 LEASE_SECONDS = 30
@@ -255,8 +256,8 @@ async def run(once=False):
     try:
         async with engine.connect() as connection:
             revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-            if revision != "0006_ledger":
-                raise RuntimeError("Worker requires migration 0006_ledger")
+            if revision != CURRENT_SCHEMA_REVISION:
+                raise RuntimeError(f"Worker requires migration {CURRENT_SCHEMA_REVISION}")
         endpoints = load_endpoints(settings.node_config or None)
         if endpoints and not once:
             poller = asyncio.create_task(poll_forever(sessions, endpoints, stop))
