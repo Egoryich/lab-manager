@@ -85,7 +85,7 @@ def main():
                 "-m",
                 "alembic",
                 "upgrade",
-                "0002_catalog",
+                "0004_nodes",
             )
             # Upgrade an existing catalog database without losing an existing account.
             compose(
@@ -104,6 +104,33 @@ def main():
                 "VALUES ('00000000-0000-0000-0000-000000000001', 'migration.probe', "
                 "'Migration probe', 'ACTIVE', 1)",
             )
+            spec = importlib.util.spec_from_file_location("updater", root / "tools/update-vps.py")
+            updater_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(updater_module)
+            archive = Path(directory) / "migration-probe.dump"
+            updater_module.transfer(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_dump",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Fc",
+                    "--no-owner",
+                    "--no-acl",
+                ],
+                destination=archive,
+                cwd=root,
+            )
+            updater_module.transfer(
+                [*command, "exec", "-T", "postgres", "pg_restore", "--list"],
+                source=archive,
+                cwd=root,
+            )
             compose(
                 "run",
                 "--rm",
@@ -115,6 +142,85 @@ def main():
                 "upgrade",
                 "head",
             )
+            compose(
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "lab",
+                "-d",
+                "lab",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-1",
+                "-c",
+                "DROP SCHEMA public CASCADE; CREATE SCHEMA public",
+            )
+            updater_module.transfer(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_restore",
+                    "--clean",
+                    "--if-exists",
+                    "--single-transaction",
+                    "--no-owner",
+                    "--no-acl",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                ],
+                source=archive,
+                cwd=root,
+            )
+            restored_revision = subprocess.check_output(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Atc",
+                    "SELECT version_num FROM alembic_version",
+                ],
+                text=True,
+            ).strip()
+            assert restored_revision == "0004_nodes"
+            compose(
+                "run",
+                "--rm",
+                "--no-deps",
+                "api",
+                "/app/.venv/bin/python",
+                "-m",
+                "alembic",
+                "upgrade",
+                "head",
+            )
+            latest_revision = subprocess.check_output(
+                [
+                    *command,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Atc",
+                    "SELECT version_num FROM alembic_version",
+                ],
+                text=True,
+            ).strip()
             preserved = subprocess.check_output(
                 [
                     *command,
@@ -155,9 +261,6 @@ def main():
             compose("up", "-d", "--wait", "--wait-timeout", "120", "api")
             assert request("/api/auth/me", headers=authenticated)[0] == 200
             # Exercise the actual updater against only this disposable Compose project.
-            spec = importlib.util.spec_from_file_location("updater", root / "tools/update-vps.py")
-            updater_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(updater_module)
             update_root = Path(directory) / "updater"
             (update_root / "repo/infra/vps").mkdir(parents=True)
             shutil.copyfile(
@@ -196,7 +299,7 @@ def main():
             assert json.loads(update.state_file.read_text())["failed_sha"] == "c" * 40
             assert update.running_image("api") == image_ids["api"]
             assert update.running_image("worker") == image_ids["worker"]
-            assert update.schema() == "0004_nodes"
+            assert update.schema() == latest_revision
             assert request("/api/auth/me", headers=authenticated)[0] == 200
             compose("ps")
             print(

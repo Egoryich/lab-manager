@@ -1,4 +1,4 @@
-"""Pull verified dev-vps application images; never migrate or prune data unattended."""
+"""Deploy verified dev-vps releases, with a temporary database recovery copy."""
 
 import argparse
 import hashlib
@@ -37,6 +37,30 @@ def run(*args, cwd=None):
         # Compose errors can contain interpolated environment values; do not journal them.
         raise RuntimeError(f"{args[0]} failed (exit {result.returncode}); inspect services locally")
     return result.stdout.strip()
+
+
+def transfer(args, *, source=None, destination=None, cwd=None):
+    """Move a PostgreSQL archive without decoding it or exposing service output."""
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("LAB_", "COMPOSE_")) and key != "POSTGRES_PASSWORD"
+    }
+    with open(source, "rb") if source else open(destination, "wb") as stream:
+        result = subprocess.run(
+            args,
+            cwd=cwd,
+            env=environment,
+            stdin=stream if source else subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL if source else stream,
+            stderr=subprocess.PIPE,
+            timeout=480,
+        )
+        if not source:
+            stream.flush()
+            os.fsync(stream.fileno())
+    if result.returncode:
+        raise RuntimeError(f"{args[0]} database transfer failed (exit {result.returncode})")
 
 
 def atomic(path, content):
@@ -134,10 +158,11 @@ class Updater:
         self.pending = self.directory / "pending.json"
         self.previous = self.directory / "previous.env"
         self.candidate = self.directory / "candidate.env"
+        self.backup = self.directory / "migration.dump"
         self.project = project
 
-    def compose(self, env, *args):
-        return run(
+    def compose_args(self, env, *args):
+        return (
             "docker",
             "compose",
             "-p",
@@ -147,8 +172,10 @@ class Updater:
             "-f",
             str(self.compose_file),
             *args,
-            cwd=self.repo,
         )
+
+    def compose(self, env, *args):
+        return run(*self.compose_args(env, *args), cwd=self.repo)
 
     def git(self, *args):
         return run("git", *args, cwd=self.repo)
@@ -156,8 +183,9 @@ class Updater:
     def save_state(self, state):
         atomic(self.state_file, json.dumps(state, indent=2) + "\n")
 
-    def ready(self, public=True):
-        origin = fields(self.env.read_text())["LAB_PUBLIC_ORIGIN"]
+    def ready(self, public=True, env=None):
+        env = env or self.env
+        origin = fields(env.read_text())["LAB_PUBLIC_ORIGIN"]
         urls = ["http://127.0.0.1:18000/api/health/ready", "http://127.0.0.1:18080/"]
         if public:
             urls.append(origin + "/api/health/ready")
@@ -169,7 +197,7 @@ class Updater:
                             raise RuntimeError("Unexpected readiness response")
                         if url.endswith("/ready") and json.load(response) != {"status": "ready"}:
                             raise RuntimeError("API is not ready")
-                container = self.compose(self.env, "ps", "-q", "worker")
+                container = self.compose(env, "ps", "-q", "worker")
                 if (
                     not container
                     or run("docker", "inspect", "--format", "{{.State.Health.Status}}", container)
@@ -248,6 +276,9 @@ class Updater:
             raise RuntimeError(
                 "Compose changed during interrupted update; manual recovery required"
             )
+        if pending.get("migration"):
+            self.recover_migration(pending)
+            return
         if self.schema() != pending["previous_state"]["schema_revision"]:
             raise RuntimeError("Database revision changed; automatic image rollback refused")
         print("Recovering previous application images; database schema is unchanged", flush=True)
@@ -273,6 +304,234 @@ class Updater:
         self.save_state(state)
         self.pending.unlink()
         print("Previous application restored; failed release is blocked", flush=True)
+
+    def database_dump(self):
+        if self.backup.exists():
+            raise RuntimeError("Previous migration archive exists; inspect before retry")
+        if shutil.disk_usage(self.root).free < 1024 * 1024 * 1024:
+            raise RuntimeError("Less than 1 GiB free; refusing migration archive")
+        temporary = self.backup.with_suffix(".dump.tmp")
+        if temporary.exists():
+            temporary.unlink()
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(descriptor)
+        try:
+            transfer(
+                self.compose_args(
+                    self.previous,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_dump",
+                    "-U",
+                    "lab",
+                    "-d",
+                    "lab",
+                    "-Fc",
+                    "--no-owner",
+                    "--no-acl",
+                ),
+                destination=temporary,
+                cwd=self.repo,
+            )
+            if not temporary.stat().st_size:
+                raise RuntimeError("Empty migration archive")
+            transfer(
+                self.compose_args(
+                    self.previous,
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "pg_restore",
+                    "--list",
+                ),
+                source=temporary,
+                cwd=self.repo,
+            )
+            if shutil.disk_usage(self.root).free < 512 * 1024 * 1024:
+                raise RuntimeError("Insufficient space after migration archive")
+            os.replace(temporary, self.backup)
+            if os.name != "nt":
+                directory = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def restore_database(self):
+        if not self.backup.is_file() or not self.backup.stat().st_size:
+            raise RuntimeError("Migration archive missing; manual recovery required")
+        # A newer migration may add tables that reference objects in the archive.
+        # pg_restore --clean alone cannot drop those newer dependencies. This is
+        # the dedicated Lab Manager database, and API/worker are already stopped.
+        # Keep the archive until the old revision and services are verified.
+        self.compose(
+            self.previous,
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "lab",
+            "-d",
+            "lab",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-1",
+            "-c",
+            "DROP SCHEMA public CASCADE; CREATE SCHEMA public",
+        )
+        transfer(
+            self.compose_args(
+                self.previous,
+                "exec",
+                "-T",
+                "postgres",
+                "pg_restore",
+                "--clean",
+                "--if-exists",
+                "--single-transaction",
+                "--no-owner",
+                "--no-acl",
+                "-U",
+                "lab",
+                "-d",
+                "lab",
+            ),
+            source=self.backup,
+            cwd=self.repo,
+        )
+
+    def finish_migration(self, pending):
+        state = pending["previous_state"]
+        sha = pending["target_sha"]
+        if self.schema() != pending["target_schema"]:
+            raise RuntimeError("Candidate database revision mismatch")
+        self.ready(env=self.candidate)
+        atomic(self.env, self.candidate.read_text())
+        self.save_state(
+            {
+                **state,
+                "active_sha": sha,
+                "failed_sha": None,
+                "env_hash": content_hash(self.env),
+                "schema_revision": pending["target_schema"],
+                "images": {s: self.running_image(s) for s in ("api", "web", "worker")},
+            }
+        )
+        self.pending.unlink()
+        try:
+            self.backup.unlink()
+        except OSError:
+            print("Migration archive cleanup failed; inspect before next migration", flush=True)
+        print(f"Migrated and updated application to {sha}", flush=True)
+
+    def recover_migration(self, pending):
+        state = pending["previous_state"]
+        revision = self.schema()
+        if revision == pending["target_schema"]:
+            try:
+                self.finish_migration(pending)
+                return
+            except Exception:
+                if pending.get("candidate_started"):
+                    raise RuntimeError(
+                        "Candidate may have accepted writes; automatic database restore refused; "
+                        "migration archive retained"
+                    ) from None
+        elif revision != state["schema_revision"]:
+            raise RuntimeError("Unknown database revision; migration archive retained")
+        print("Restoring previous database and application", flush=True)
+        self.compose(self.previous, "stop", "api", "worker")
+        if revision != state["schema_revision"]:
+            self.restore_database()
+            if self.schema() != state["schema_revision"]:
+                raise RuntimeError("Database restore revision mismatch; archive retained")
+        self.compose(
+            self.previous,
+            "up",
+            "-d",
+            "--no-deps",
+            "--pull",
+            "never",
+            "--wait",
+            "--wait-timeout",
+            "120",
+            "api",
+            "web",
+            "worker",
+        )
+        atomic(self.env, self.previous.read_text())
+        self.ready()
+        self.save_state(
+            {**state, "failed_sha": pending["target_sha"], "env_hash": content_hash(self.env)}
+        )
+        self.pending.unlink()
+        try:
+            self.backup.unlink(missing_ok=True)
+        except OSError:
+            print("Migration archive cleanup failed; inspect before next migration", flush=True)
+        print("Previous database and application restored; failed release blocked", flush=True)
+
+    def apply_migration(self, sha, state, contents, api, web, target_schema):
+        if self.running_image("worker") != self.running_image("api"):
+            raise RuntimeError("API and worker images differ; manual recovery required")
+        previous = image_env(contents, self.running_image("api"), self.running_image("web"))
+        atomic(self.previous, previous)
+        atomic(self.candidate, image_env(contents, api, web))
+        if self.env.read_text() != contents:
+            raise RuntimeError("Deployment env changed concurrently; stopped")
+        atomic(
+            self.pending,
+            json.dumps(
+                {
+                    "previous_state": state,
+                    "target_sha": sha,
+                    "target_schema": target_schema,
+                    "migration": True,
+                }
+            ),
+        )
+        try:
+            self.compose(self.previous, "stop", "api", "worker")
+            self.database_dump()
+            self.compose(
+                self.candidate,
+                "run",
+                "--rm",
+                "--no-deps",
+                "--pull",
+                "never",
+                "api",
+                "/app/.venv/bin/python",
+                "-m",
+                "alembic",
+                "upgrade",
+                "head",
+            )
+            pending = json.loads(self.pending.read_text())
+            pending["candidate_started"] = True
+            atomic(self.pending, json.dumps(pending))
+            self.compose(
+                self.candidate,
+                "up",
+                "-d",
+                "--no-deps",
+                "--pull",
+                "never",
+                "--wait",
+                "--wait-timeout",
+                "120",
+                "api",
+                "web",
+                "worker",
+            )
+            self.finish_migration(json.loads(self.pending.read_text()))
+        except Exception:
+            self.recover()
+            raise RuntimeError("Migration failed; previous release restored") from None
 
     def apply(self, sha, state, contents, api, web):
         if self.running_image("worker") != self.running_image("api"):
@@ -365,12 +624,14 @@ class Updater:
         }
         if not {"identity-groups", "vps-images"} <= successful:
             raise RuntimeError("Required test or image publication job did not succeed")
-        for path in ("infra/vps/compose.yml", "migrations"):
-            if self.git("rev-parse", f"{sha}:{path}") != self.git(
-                "rev-parse", f"{state['active_sha']}:{path}"
-            ):
-                raise RuntimeError("Release changes schema or Compose; manual deployment required")
-        print(f"Verified compatible release: {sha}", flush=True)
+        if self.git("rev-parse", f"{sha}:infra/vps/compose.yml") != self.git(
+            "rev-parse", f"{state['active_sha']}:infra/vps/compose.yml"
+        ):
+            raise RuntimeError("Release changes Compose; manual deployment required")
+        migration = self.git("rev-parse", f"{sha}:migrations") != self.git(
+            "rev-parse", f"{state['active_sha']}:migrations"
+        )
+        print(f"Verified release: {sha}; migration={migration}", flush=True)
         if check:
             return
         if shutil.disk_usage(self.root).free < 1536 * 1024 * 1024:
@@ -388,7 +649,31 @@ class Updater:
             images.append(pulled_digest(repository, pull_output, digests))
         if shutil.disk_usage(self.root).free < 512 * 1024 * 1024:
             raise RuntimeError("Insufficient free space after pull; current service kept")
-        self.apply(sha, state, contents, *images)
+        if migration:
+            if shutil.disk_usage(self.root).free < 1024 * 1024 * 1024:
+                raise RuntimeError("Less than 1 GiB free; refusing database migration")
+            atomic(self.candidate, image_env(contents, *images))
+            target_schema = self.compose(
+                self.candidate,
+                "run",
+                "--rm",
+                "--no-deps",
+                "--pull",
+                "never",
+                "api",
+                "/app/.venv/bin/python",
+                "-m",
+                "alembic",
+                "heads",
+            )
+            if not re.fullmatch(r"[A-Za-z0-9_]+ \(head\)", target_schema):
+                raise RuntimeError("Expected exactly one Alembic head")
+            target_schema = target_schema.split(" ", 1)[0]
+            if target_schema == state["schema_revision"]:
+                raise RuntimeError("Migration tree changed without a new revision")
+            self.apply_migration(sha, state, contents, *images, target_schema)
+        else:
+            self.apply(sha, state, contents, *images)
 
 
 def main():

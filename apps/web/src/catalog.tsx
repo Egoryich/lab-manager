@@ -7,6 +7,7 @@ import { EnvironmentValidation } from './operations';
 type Policy = components['schemas']['PolicyCreate'];
 type Draft = components['schemas']['EnvironmentCreate'];
 type Estimate = components['schemas']['EstimateView'];
+type Profile = components['schemas']['ProfileView'];
 const names: Record<string, string> = {
   can_create_groups: 'Создавать группы',
   can_delete_groups: 'Удалять группы',
@@ -22,7 +23,6 @@ const names: Record<string, string> = {
   can_delete_own_environments: 'Удалять свои окружения',
   can_archive_environments: 'Архивировать окружения',
   can_override_idle_policy: 'Настраивать простой',
-  can_override_resource_limits: 'Настраивать ресурсы в разрешённых границах',
   can_power_on_node: 'Включать сервер',
   can_request_node_shutdown: 'Запрашивать выключение сервера',
   can_use_exclusive_mode: 'Эксклюзивное занятие',
@@ -41,6 +41,7 @@ const submit = (fn: (data: FormData) => void) => (e: FormEvent<HTMLFormElement>)
 };
 const str = (d: FormData, k: string) => String(d.get(k) ?? '');
 const num = (d: FormData, k: string) => Number(d.get(k));
+const optionalNum = (d: FormData, k: string) => (str(d, k) === '' ? undefined : num(d, k));
 function ErrorText({ error }: { error: unknown }) {
   return error ? (
     <p role="alert" className="error">
@@ -109,8 +110,13 @@ export function CatalogAdmin() {
             template_version_id: str(d, 'template_version_id'),
             memory_mib: num(d, 'memory_mib'),
             vcpu: num(d, 'vcpu'),
-            cpu_millicredits: num(d, 'cpu_millicredits'),
             disk_gib: num(d, 'disk_gib'),
+            min_memory_mib: optionalNum(d, 'min_memory_mib'),
+            max_memory_mib: optionalNum(d, 'max_memory_mib'),
+            min_vcpu: optionalNum(d, 'min_vcpu'),
+            max_vcpu: optionalNum(d, 'max_vcpu'),
+            min_disk_gib: optionalNum(d, 'min_disk_gib'),
+            max_disk_gib: optionalNum(d, 'max_disk_gib'),
             network_mode: str(d, 'network_mode') as 'ISOLATED' | 'GROUP_LAN',
             internet_enabled: d.has('internet_enabled'),
           },
@@ -236,7 +242,7 @@ export function CatalogAdmin() {
             </label>
             <div className="field-grid">
               <label>
-                RAM, MiB
+                Рекомендуемая RAM, MiB
                 <input
                   name="memory_mib"
                   type="number"
@@ -247,22 +253,11 @@ export function CatalogAdmin() {
                 />
               </label>
               <label>
-                Виртуальные CPU
+                Рекомендуемые vCPU
                 <input name="vcpu" type="number" min={1} max={128} defaultValue={1} required />
               </label>
               <label>
-                CPU, милликредиты
-                <input
-                  name="cpu_millicredits"
-                  type="number"
-                  min={1}
-                  max={128000}
-                  defaultValue={1000}
-                  required
-                />
-              </label>
-              <label>
-                Диск, GiB
+                Рекомендуемый диск, GiB
                 <input
                   name="disk_gib"
                   type="number"
@@ -273,9 +268,36 @@ export function CatalogAdmin() {
                 />
               </label>
             </div>
-            <small>
-              1000 милликредитов = 1 учётный CPU-кредит. Это не измерение загрузки процессора.
-            </small>
+            <p className="muted">
+              Преподаватель сможет менять размеры в заданных границах. Пустая граница равна
+              рекомендуемому значению; CPU-бюджет рассчитывается автоматически по vCPU.
+            </p>
+            <div className="field-grid">
+              <label>
+                Минимум RAM, MiB
+                <input name="min_memory_mib" type="number" min={128} max={1048576} />
+              </label>
+              <label>
+                Максимум RAM, MiB
+                <input name="max_memory_mib" type="number" min={128} max={1048576} />
+              </label>
+              <label>
+                Минимум vCPU
+                <input name="min_vcpu" type="number" min={1} max={128} />
+              </label>
+              <label>
+                Максимум vCPU
+                <input name="max_vcpu" type="number" min={1} max={128} />
+              </label>
+              <label>
+                Минимум диска, GiB
+                <input name="min_disk_gib" type="number" min={1} max={1048576} />
+              </label>
+              <label>
+                Максимум диска, GiB
+                <input name="max_disk_gib" type="number" min={1} max={1048576} />
+              </label>
+            </div>
             <label>
               Сеть студентов
               <select name="network_mode">
@@ -297,8 +319,9 @@ export function CatalogAdmin() {
               <li key={p.id}>
                 {p.name}
                 <small>
-                  {p.runtime_kind} · {p.memory_mib} MiB · {p.vcpu} vCPU · {p.disk_gib} GiB ·{' '}
-                  {p.internet_enabled ? 'Интернет' : 'Без Интернета'}
+                  {p.runtime_kind} · {p.memory_mib} MiB ({p.min_memory_mib}–{p.max_memory_mib}) ·{' '}
+                  {p.vcpu} vCPU ({p.min_vcpu}–{p.max_vcpu}) · {p.disk_gib} GiB ({p.min_disk_gib}–
+                  {p.max_disk_gib}) · {p.internet_enabled ? 'Интернет' : 'Без Интернета'}
                 </small>
               </li>
             ))}
@@ -309,7 +332,8 @@ export function CatalogAdmin() {
         <h2>3. Политика преподавателя</h2>
         <p className="muted">
           Сохранённые политики неизменяемы. Для новых правил создайте новую и назначьте её
-          преподавателю. Ноль означает запрет, а не отсутствие лимита.
+          преподавателю. Лимиты здесь ограничивают одного преподавателя; свободное место и RAM
+          сервера будут рассчитываться отдельно по текущей занятости и броням. Ноль означает запрет.
         </p>
         <form onSubmit={submit((d) => policy.mutate(d))}>
           <label>
@@ -408,11 +432,65 @@ export function CatalogAdmin() {
   );
 }
 
+function SizingFields({
+  prefix,
+  profile,
+  title,
+}: {
+  prefix: 'student' | 'demo';
+  profile?: Profile;
+  title: string;
+}) {
+  if (!profile) return null;
+  return (
+    <div className="resource-estimate">
+      <h3>{title}</h3>
+      <div className="field-grid">
+        <label>
+          RAM, MiB ({profile.min_memory_mib}–{profile.max_memory_mib})
+          <input
+            name={`${prefix}_memory_mib`}
+            type="number"
+            min={profile.min_memory_mib}
+            max={profile.max_memory_mib}
+            defaultValue={profile.memory_mib}
+            required
+          />
+        </label>
+        <label>
+          vCPU ({profile.min_vcpu}–{profile.max_vcpu})
+          <input
+            name={`${prefix}_vcpu`}
+            type="number"
+            min={profile.min_vcpu}
+            max={profile.max_vcpu}
+            defaultValue={profile.vcpu}
+            required
+          />
+        </label>
+        <label>
+          Диск, GiB ({profile.min_disk_gib}–{profile.max_disk_gib})
+          <input
+            name={`${prefix}_disk_gib`}
+            type="number"
+            min={profile.min_disk_gib}
+            max={profile.max_disk_gib}
+            defaultValue={profile.disk_gib}
+            required
+          />
+        </label>
+      </div>
+    </div>
+  );
+}
+
 export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canCreate: boolean }) {
   const cache = useQueryClient();
   const profiles = useProfiles();
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [studentProfileId, setStudentProfileId] = useState('');
+  const [demoProfileId, setDemoProfileId] = useState('');
   const environments = useQuery({
     queryKey: ['environments', groupId],
     queryFn: async () =>
@@ -424,6 +502,16 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
     profile_version_id: str(d, 'profile_version_id'),
     demo_profile_version_id: str(d, 'demo_profile_version_id'),
     request_id: requestId,
+    student_resources: {
+      memory_mib: num(d, 'student_memory_mib'),
+      vcpu: num(d, 'student_vcpu'),
+      disk_gib: num(d, 'student_disk_gib'),
+    },
+    demo_resources: {
+      memory_mib: num(d, 'demo_memory_mib'),
+      vcpu: num(d, 'demo_vcpu'),
+      disk_gib: num(d, 'demo_disk_gib'),
+    },
   });
   const calculate = useMutation({
     mutationFn: async (d: FormData) =>
@@ -443,7 +531,8 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
     <section className="panel">
       <h2>Учебные окружения</h2>
       <p className="muted">
-        Сохраните конфигурацию занятия. Запуск на сервере появится после подключения Proxmox.
+        Сохраните конфигурацию занятия. Запуск машин станет доступен после проверки вместимости,
+        бронирования и настройки исполнительного агента.
       </p>
       <ErrorText error={profiles.error || environments.error} />
       {canCreate && (
@@ -467,7 +556,12 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
           <div className="field-grid">
             <label>
               Машина студента
-              <select name="profile_version_id" required defaultValue="">
+              <select
+                name="profile_version_id"
+                required
+                value={studentProfileId}
+                onChange={(e) => setStudentProfileId(e.target.value)}
+              >
                 <option value="" disabled>
                   Выберите разрешённый профиль
                 </option>
@@ -482,7 +576,12 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
             </label>
             <label>
               Демонстрационная машина
-              <select name="demo_profile_version_id" required defaultValue="">
+              <select
+                name="demo_profile_version_id"
+                required
+                value={demoProfileId}
+                onChange={(e) => setDemoProfileId(e.target.value)}
+              >
                 <option value="" disabled>
                   Выберите демо
                 </option>
@@ -496,6 +595,18 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
               </select>
             </label>
           </div>
+          <SizingFields
+            key={studentProfileId}
+            prefix="student"
+            profile={profiles.data?.find((p) => p.id === studentProfileId)}
+            title="Размер каждой студенческой машины"
+          />
+          <SizingFields
+            key={demoProfileId}
+            prefix="demo"
+            profile={profiles.data?.find((p) => p.id === demoProfileId)}
+            title="Размер демонстрационной машины"
+          />
           {!profiles.data?.some((p) => p.student_allowed) && (
             <p className="muted">
               Попросите администратора назначить политику и разрешённые профили.
@@ -566,6 +677,11 @@ export function EnvironmentPanel({ groupId, canCreate }: { groupId: string; canC
           <li key={e.id}>
             <strong>{e.name}</strong>
             <span className="pill">Подготовлено</span>
+            <small>
+              Студент: {e.student_memory_mib} MiB, {e.student_vcpu} vCPU, {e.student_disk_gib} GiB
+              диска · Демо: {e.demo_memory_mib} MiB, {e.demo_vcpu} vCPU, {e.demo_disk_gib} GiB
+              диска.
+            </small>
             <small>Профили закреплены. Машины ещё не созданы, ресурсы не зарезервированы.</small>
             {canCreate && <EnvironmentValidation environment={e} />}
           </li>

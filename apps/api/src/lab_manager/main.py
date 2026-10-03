@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from lab_manager import auth, catalog, groups, nodes, operations
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
+from lab_manager.schema import CURRENT_SCHEMA_REVISION
 from lab_manager.schemas import ErrorView
 from lab_manager.security import SecretCodec
 
@@ -125,7 +126,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             async with app.state.engine.connect() as connection:
                 revision = await connection.scalar(text("SELECT version_num FROM alembic_version"))
-                if revision != "0004_nodes":
+                if revision != CURRENT_SCHEMA_REVISION:
                     raise Problem(503, "MIGRATION_REQUIRED", "Требуется обновить схему базы.")
             await app.state.redis.ping()
         except (SQLAlchemyError, RedisError) as error:

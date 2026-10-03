@@ -96,6 +96,24 @@ SH
 
 Подтверждение 29.09.2026: пользователь прислал `Verification: OK` (TLS 1.3), `Credentials saved; secret not displayed.`, ровно `Datastore.Audit`, `Sys.Audit`, `VM.Audit` на `/` и `Read-only access prepared`. Сообщение `Can't use SSL_get_servername` при подключении по IP не отменяет успешную проверку IP/цепочки. Секрет не передавался. Это проверка TLS и ACL через административный CLI, ещё не фактическая аутентификация токеном через REST.
 
+### Чтение существующих мостов сервисным токеном
+
+На Proxmox 9 `GET /nodes/{node}/network` скрывает локальные мосты без `SDN.Audit` либо `SDN.Use` на их путях. `Sys.Audit` на `/` для этого недостаточно: проверено 01.10.2026, токен возвращал только физический `nic0`, хотя root видел `vmbr0` и `vmbr1`. Следующие команды были выполнены успешно в root shell; они дают только право чтения двух существующих мостов и не меняют настройки сети. При повторном развёртывании замените имена мостов на свои и не запускайте `role add`, если роль уже создана.
+
+```bash
+set -e
+pveum role add LabNetworkAudit --privs SDN.Audit
+
+token_id=$(python3 -c 'import json; print(json.load(open("/etc/lab-manager/proxmox-token.json"))["token_id"])')
+for bridge in vmbr0 vmbr1; do
+  path="/sdn/zones/localnetwork/$bridge"
+  pveum acl modify "$path" --user lab-inventory@pve --role LabNetworkAudit
+  pveum acl modify "$path" --token "$token_id" --role LabNetworkAudit
+done
+```
+
+Повторный запрос через сервисный токен подтвердил `vmbr0`, `vmbr1` и `nic0` без вывода секрета. Для privilege-separated token права нужны и владельцу, и токену. Основание фильтрации — [код Proxmox API](https://github.com/proxmox/pve-manager/blob/master/PVE/API2/Network.pm) и [документация прав токенов](https://pve.proxmox.com/pve-docs/pveum.html).
+
 ## Установка пакета и первый API-снимок
 
 Успешное выполнение следующего блока подтверждено пользователем 29.09.2026. Запуск в root shell Proxmox. Устанавливаются только curl и поддержка venv (без общего upgrade ОС); пакет помещается в отдельный каталог выпуска и не меняет системный Python. SHA-256 wheel проверен по опубликованному asset GitHub release. Репозиторий и Git на узле не требуются. Однократный диагностический запуск выполняется root; постоянная служба с отдельным системным пользователем будет следующим этапом.

@@ -489,6 +489,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BridgeObservation */
+        BridgeObservation: {
+            /** Name */
+            name: string;
+            /** Active */
+            active: boolean;
+            /** Ports */
+            ports: string[];
+        };
         /** EffectivePolicy */
         EffectivePolicy: {
             /** Revision Id */
@@ -530,6 +539,8 @@ export interface components {
              * Format: uuid
              */
             request_id: string;
+            student_resources?: components["schemas"]["MachineSizing"] | null;
+            demo_resources?: components["schemas"]["MachineSizing"] | null;
         };
         /** EnvironmentView */
         EnvironmentView: {
@@ -555,6 +566,18 @@ export interface components {
              * Format: uuid
              */
             demo_profile_version_id: string;
+            /** Student Memory Mib */
+            student_memory_mib: number;
+            /** Student Vcpu */
+            student_vcpu: number;
+            /** Student Disk Gib */
+            student_disk_gib: number;
+            /** Demo Memory Mib */
+            demo_memory_mib: number;
+            /** Demo Vcpu */
+            demo_vcpu: number;
+            /** Demo Disk Gib */
+            demo_disk_gib: number;
             /** Version */
             version: number;
             /**
@@ -671,6 +694,15 @@ export interface components {
              */
             password: string;
         };
+        /** MachineSizing */
+        MachineSizing: {
+            /** Memory Mib */
+            memory_mib: number;
+            /** Vcpu */
+            vcpu: number;
+            /** Disk Gib */
+            disk_gib: number;
+        };
         /** NodeView */
         NodeView: {
             /**
@@ -693,6 +725,10 @@ export interface components {
             guest_count: number | null;
             /** Storage Count */
             storage_count: number | null;
+            /** Storages */
+            storages: components["schemas"]["StorageView"][] | null;
+            /** Network Bridges */
+            network_bridges: components["schemas"]["BridgeObservation"][] | null;
             /**
              * Admission Ready
              * @default false
@@ -790,9 +826,21 @@ export interface components {
             /** Vcpu */
             vcpu: number;
             /** Cpu Millicredits */
-            cpu_millicredits: number;
+            cpu_millicredits?: number | null;
             /** Disk Gib */
             disk_gib: number;
+            /** Min Memory Mib */
+            min_memory_mib?: number | null;
+            /** Max Memory Mib */
+            max_memory_mib?: number | null;
+            /** Min Vcpu */
+            min_vcpu?: number | null;
+            /** Max Vcpu */
+            max_vcpu?: number | null;
+            /** Min Disk Gib */
+            min_disk_gib?: number | null;
+            /** Max Disk Gib */
+            max_disk_gib?: number | null;
             /**
              * Network Mode
              * @enum {string}
@@ -818,6 +866,18 @@ export interface components {
             cpu_millicredits: number;
             /** Disk Gib */
             disk_gib: number;
+            /** Min Memory Mib */
+            min_memory_mib: number;
+            /** Max Memory Mib */
+            max_memory_mib: number;
+            /** Min Vcpu */
+            min_vcpu: number;
+            /** Max Vcpu */
+            max_vcpu: number;
+            /** Min Disk Gib */
+            min_disk_gib: number;
+            /** Max Disk Gib */
+            max_disk_gib: number;
             /**
              * Network Mode
              * @enum {string}
@@ -905,6 +965,29 @@ export interface components {
             csrf_token: string;
             /** Can Create Groups */
             can_create_groups: boolean;
+        };
+        /** StorageView */
+        StorageView: {
+            /** Name */
+            name: string;
+            /** Backend */
+            backend: string;
+            /** Active */
+            active: boolean;
+            /** Total Bytes */
+            total_bytes: number | null;
+            /** Used Bytes */
+            used_bytes: number | null;
+            /** Available Bytes */
+            available_bytes: number | null;
+            /** Thin Metadata Percent */
+            thin_metadata_percent: number | null;
+            /** Observed Volume Count */
+            observed_volume_count: number | null;
+            /** Physical Volumes */
+            physical_volumes: string[] | null;
+            /** Physical Backing Reconciled */
+            physical_backing_reconciled: boolean | null;
         };
         /** TemplateCreate */
         TemplateCreate: {

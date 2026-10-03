@@ -59,15 +59,44 @@ class ProfileCreate(GroupCreate):
     template_version_id: uuid.UUID
     memory_mib: int = Field(ge=128, le=1048576)
     vcpu: int = Field(ge=1, le=128)
-    cpu_millicredits: int = Field(ge=1, le=128000)
+    cpu_millicredits: int | None = Field(default=None, ge=1, le=128000)
     disk_gib: int = Field(ge=1, le=1048576)
+    min_memory_mib: int | None = Field(default=None, ge=128, le=1048576)
+    max_memory_mib: int | None = Field(default=None, ge=128, le=1048576)
+    min_vcpu: int | None = Field(default=None, ge=1, le=128)
+    max_vcpu: int | None = Field(default=None, ge=1, le=128)
+    min_disk_gib: int | None = Field(default=None, ge=1, le=1048576)
+    max_disk_gib: int | None = Field(default=None, ge=1, le=1048576)
     network_mode: Literal["ISOLATED", "GROUP_LAN"]
     internet_enabled: bool
+
+    @model_validator(mode="after")
+    def resource_range(self):
+        if self.cpu_millicredits is None:
+            self.cpu_millicredits = self.vcpu * 1000
+        for field in ("memory_mib", "vcpu", "disk_gib"):
+            preferred = getattr(self, field)
+            minimum = getattr(self, f"min_{field}")
+            maximum = getattr(self, f"max_{field}")
+            minimum = preferred if minimum is None else minimum
+            maximum = preferred if maximum is None else maximum
+            if not minimum <= preferred <= maximum:
+                raise ValueError(f"{field} must be within its allowed range")
+            setattr(self, f"min_{field}", minimum)
+            setattr(self, f"max_{field}", maximum)
+        return self
 
 
 class ProfileView(ProfileCreate):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID
+    cpu_millicredits: int
+    min_memory_mib: int
+    max_memory_mib: int
+    min_vcpu: int
+    max_vcpu: int
+    min_disk_gib: int
+    max_disk_gib: int
     runtime_kind: Literal["LXC", "QEMU"]
     guest_family: Literal["LINUX", "WINDOWS"]
     student_allowed: bool = False
@@ -107,11 +136,19 @@ class EffectivePolicy(BaseModel):
     demo_profile_ids: list[uuid.UUID]
 
 
+class MachineSizing(Input):
+    memory_mib: int = Field(ge=128, le=1048576)
+    vcpu: int = Field(ge=1, le=128)
+    disk_gib: int = Field(ge=1, le=1048576)
+
+
 class EnvironmentCreate(GroupCreate):
     group_id: uuid.UUID
     profile_version_id: uuid.UUID
     demo_profile_version_id: uuid.UUID
     request_id: uuid.UUID
+    student_resources: MachineSizing | None = None
+    demo_resources: MachineSizing | None = None
 
 
 class ResourceTotal(BaseModel):
@@ -142,5 +179,11 @@ class EnvironmentView(BaseModel):
     group_id: uuid.UUID
     profile_version_id: uuid.UUID
     demo_profile_version_id: uuid.UUID
+    student_memory_mib: int
+    student_vcpu: int
+    student_disk_gib: int
+    demo_memory_mib: int
+    demo_vcpu: int
+    demo_disk_gib: int
     version: int
     state: Literal["DRAFT"] = "DRAFT"

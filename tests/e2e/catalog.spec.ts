@@ -18,6 +18,9 @@ test('administrator configures profiles and teacher prepares an environment', as
   await page
     .getByRole('combobox', { name: 'Версия шаблона', exact: true })
     .selectOption({ label: 'Linux E2E · e2e-1 · LXC' });
+  await page.getByLabel('Минимум RAM, MiB').fill('256');
+  await page.getByLabel('Максимум RAM, MiB').fill('1024');
+  await page.getByLabel('Минимум диска, GiB').fill('5');
   await page.getByRole('button', { name: 'Сохранить профиль' }).click();
   await expect(page.locator('.catalog-list').filter({ hasText: 'Практика 512' })).toBeVisible();
   await page.getByLabel('Название политики', { exact: true }).fill('Учебная политика');
@@ -60,6 +63,8 @@ test('administrator configures profiles and teacher prepares an environment', as
   await teacher
     .getByRole('combobox', { name: 'Демонстрационная машина', exact: true })
     .selectOption({ label: 'Практика 512 · LXC' });
+  await teacher.locator('input[name="student_memory_mib"]').fill('256');
+  await teacher.locator('input[name="student_disk_gib"]').fill('5');
   await teacher.getByRole('button', { name: 'Рассчитать ресурсы' }).click();
   await expect(teacher.getByText('Одно окружение укладывается в заданные лимиты.')).toBeVisible();
   await teacher.screenshot({ path: 'artifacts/environment-estimate.png', fullPage: true });

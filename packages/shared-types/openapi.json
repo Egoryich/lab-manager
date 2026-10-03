@@ -3745,6 +3745,36 @@
   },
   "components": {
     "schemas": {
+      "BridgeObservation": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "ports": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Ports"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "active",
+          "ports"
+        ],
+        "title": "BridgeObservation"
+      },
       "EffectivePolicy": {
         "properties": {
           "revision_id": {
@@ -3857,6 +3887,26 @@
             "type": "string",
             "format": "uuid",
             "title": "Request Id"
+          },
+          "student_resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineSizing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "demo_resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MachineSizing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3896,6 +3946,30 @@
             "format": "uuid",
             "title": "Demo Profile Version Id"
           },
+          "student_memory_mib": {
+            "type": "integer",
+            "title": "Student Memory Mib"
+          },
+          "student_vcpu": {
+            "type": "integer",
+            "title": "Student Vcpu"
+          },
+          "student_disk_gib": {
+            "type": "integer",
+            "title": "Student Disk Gib"
+          },
+          "demo_memory_mib": {
+            "type": "integer",
+            "title": "Demo Memory Mib"
+          },
+          "demo_vcpu": {
+            "type": "integer",
+            "title": "Demo Vcpu"
+          },
+          "demo_disk_gib": {
+            "type": "integer",
+            "title": "Demo Disk Gib"
+          },
           "version": {
             "type": "integer",
             "title": "Version"
@@ -3914,6 +3988,12 @@
           "group_id",
           "profile_version_id",
           "demo_profile_version_id",
+          "student_memory_mib",
+          "student_vcpu",
+          "student_disk_gib",
+          "demo_memory_mib",
+          "demo_vcpu",
+          "demo_disk_gib",
           "version"
         ],
         "title": "EnvironmentView"
@@ -4211,6 +4291,36 @@
         ],
         "title": "Login"
       },
+      "MachineSizing": {
+        "properties": {
+          "memory_mib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 128.0,
+            "title": "Memory Mib"
+          },
+          "vcpu": {
+            "type": "integer",
+            "maximum": 128.0,
+            "minimum": 1.0,
+            "title": "Vcpu"
+          },
+          "disk_gib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 1.0,
+            "title": "Disk Gib"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "memory_mib",
+          "vcpu",
+          "disk_gib"
+        ],
+        "title": "MachineSizing"
+      },
       "NodeView": {
         "properties": {
           "id": {
@@ -4293,6 +4403,34 @@
             ],
             "title": "Storage Count"
           },
+          "storages": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StorageView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storages"
+          },
+          "network_bridges": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BridgeObservation"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Network Bridges"
+          },
           "admission_ready": {
             "type": "boolean",
             "title": "Admission Ready",
@@ -4309,7 +4447,9 @@
           "error_code",
           "host",
           "guest_count",
-          "storage_count"
+          "storage_count",
+          "storages",
+          "network_bridges"
         ],
         "title": "NodeView"
       },
@@ -4607,9 +4747,16 @@
             "title": "Vcpu"
           },
           "cpu_millicredits": {
-            "type": "integer",
-            "maximum": 128000.0,
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Cpu Millicredits"
           },
           "disk_gib": {
@@ -4617,6 +4764,84 @@
             "maximum": 1048576.0,
             "minimum": 1.0,
             "title": "Disk Gib"
+          },
+          "min_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Memory Mib"
+          },
+          "max_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Memory Mib"
+          },
+          "min_vcpu": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Vcpu"
+          },
+          "max_vcpu": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 128.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Vcpu"
+          },
+          "min_disk_gib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Disk Gib"
+          },
+          "max_disk_gib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1048576.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Disk Gib"
           },
           "network_mode": {
             "type": "string",
@@ -4638,7 +4863,6 @@
           "template_version_id",
           "memory_mib",
           "vcpu",
-          "cpu_millicredits",
           "disk_gib",
           "network_mode",
           "internet_enabled"
@@ -4672,8 +4896,6 @@
           },
           "cpu_millicredits": {
             "type": "integer",
-            "maximum": 128000.0,
-            "minimum": 1.0,
             "title": "Cpu Millicredits"
           },
           "disk_gib": {
@@ -4681,6 +4903,30 @@
             "maximum": 1048576.0,
             "minimum": 1.0,
             "title": "Disk Gib"
+          },
+          "min_memory_mib": {
+            "type": "integer",
+            "title": "Min Memory Mib"
+          },
+          "max_memory_mib": {
+            "type": "integer",
+            "title": "Max Memory Mib"
+          },
+          "min_vcpu": {
+            "type": "integer",
+            "title": "Min Vcpu"
+          },
+          "max_vcpu": {
+            "type": "integer",
+            "title": "Max Vcpu"
+          },
+          "min_disk_gib": {
+            "type": "integer",
+            "title": "Min Disk Gib"
+          },
+          "max_disk_gib": {
+            "type": "integer",
+            "title": "Max Disk Gib"
           },
           "network_mode": {
             "type": "string",
@@ -4735,6 +4981,12 @@
           "vcpu",
           "cpu_millicredits",
           "disk_gib",
+          "min_memory_mib",
+          "max_memory_mib",
+          "min_vcpu",
+          "max_vcpu",
+          "min_disk_gib",
+          "max_disk_gib",
           "network_mode",
           "internet_enabled",
           "id",
@@ -4880,6 +5132,116 @@
           "can_create_groups"
         ],
         "title": "SessionView"
+      },
+      "StorageView": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "backend": {
+            "type": "string",
+            "title": "Backend"
+          },
+          "active": {
+            "type": "boolean",
+            "title": "Active"
+          },
+          "total_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          },
+          "available_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Bytes"
+          },
+          "thin_metadata_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thin Metadata Percent"
+          },
+          "observed_volume_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed Volume Count"
+          },
+          "physical_volumes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Volumes"
+          },
+          "physical_backing_reconciled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Physical Backing Reconciled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "backend",
+          "active",
+          "total_bytes",
+          "used_bytes",
+          "available_bytes",
+          "thin_metadata_percent",
+          "observed_volume_count",
+          "physical_volumes",
+          "physical_backing_reconciled"
+        ],
+        "title": "StorageView"
       },
       "TemplateCreate": {
         "properties": {

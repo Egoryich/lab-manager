@@ -201,8 +201,7 @@ def test_external_env_edit_blocks_before_network_or_container_changes(updater, m
         update.tick()
 
 
-@pytest.mark.parametrize("changed_path", ["migrations", "infra/vps/compose.yml"])
-def test_schema_or_compose_change_requires_manual_release(updater, monkeypatch, changed_path):
+def test_compose_change_requires_manual_release(updater, monkeypatch):
     update, _ = updater
 
     def git(*args):
@@ -211,7 +210,7 @@ def test_schema_or_compose_change_requires_manual_release(updater, monkeypatch, 
         if args == ("rev-parse", "FETCH_HEAD"):
             return NEW
         if args[0] == "rev-parse":
-            return "different" if args[1] == f"{NEW}:{changed_path}" else "same"
+            return "different" if args[1] == f"{NEW}:infra/vps/compose.yml" else "same"
         return ""
 
     monkeypatch.setattr(update, "git", git)
@@ -232,3 +231,120 @@ def test_schema_or_compose_change_requires_manual_release(updater, monkeypatch, 
     monkeypatch.setattr(update, "apply", lambda *args: pytest.fail("Must not deploy"))
     with pytest.raises(RuntimeError, match="manual deployment required"):
         update.tick()
+
+
+def test_migration_failure_restores_database_and_old_images(updater, monkeypatch):
+    update, state = updater
+    calls = []
+    revision = "0002_catalog"
+
+    def compose(env, *args):
+        nonlocal revision
+        calls.append((env, args))
+        if args[:1] == ("run",):
+            revision = "0005_sizing"
+            raise RuntimeError("migration failed after changing schema")
+
+    def transfer(args, *, source=None, destination=None, cwd=None):
+        nonlocal revision
+        if destination:
+            destination.write_bytes(b"valid archive")
+        elif "--list" not in args:
+            revision = "0002_catalog"
+
+    monkeypatch.setattr(update, "compose", compose)
+    monkeypatch.setattr(update, "schema", lambda: revision)
+    monkeypatch.setattr(
+        update,
+        "ready",
+        lambda **kwargs: (
+            (_ for _ in ()).throw(RuntimeError("candidate unhealthy")) if kwargs else None
+        ),
+    )
+    monkeypatch.setattr(module, "transfer", transfer)
+    monkeypatch.setattr(module.shutil, "disk_usage", lambda _: type("D", (), {"free": 2**32})())
+    with pytest.raises(RuntimeError, match="previous release restored"):
+        update.apply_migration(
+            NEW, state, update.env.read_text(), "new-api", "new-web", "0005_sizing"
+        )
+    assert not update.pending.exists() and not update.backup.exists()
+    assert json.loads(update.state_file.read_text())["failed_sha"] == NEW
+    assert module.fields(update.env.read_text())["LAB_API_IMAGE"] == update.running_image("api")
+    assert any(
+        args[:3] == ("exec", "-T", "postgres")
+        and "DROP SCHEMA public CASCADE; CREATE SCHEMA public" in args
+        for _, args in calls
+    )
+    assert any(args[:1] == ("up",) and env == update.previous for env, args in calls)
+
+
+def test_interrupted_migration_finishes_healthy_candidate(updater, monkeypatch):
+    update, state = updater
+    update.previous.write_text(update.env.read_text())
+    update.candidate.write_text(module.image_env(update.env.read_text(), "new-api", "new-web"))
+    update.backup.write_bytes(b"archive")
+    update.pending.write_text(
+        json.dumps(
+            {
+                "previous_state": state,
+                "target_sha": NEW,
+                "target_schema": "0005_sizing",
+                "migration": True,
+            }
+        )
+    )
+    monkeypatch.setattr(update, "schema", lambda: "0005_sizing")
+    monkeypatch.setattr(update, "ready", lambda **kwargs: None)
+    monkeypatch.setattr(
+        update, "compose", lambda *args: pytest.fail("Must not roll back healthy candidate")
+    )
+    update.recover()
+    assert not update.pending.exists() and not update.backup.exists()
+    assert json.loads(update.state_file.read_text())["schema_revision"] == "0005_sizing"
+
+
+def test_unknown_migration_revision_retains_archive(updater, monkeypatch):
+    update, state = updater
+    update.pending.write_text(
+        json.dumps(
+            {
+                "previous_state": state,
+                "target_sha": NEW,
+                "target_schema": "0005_sizing",
+                "migration": True,
+            }
+        )
+    )
+    update.backup.write_bytes(b"archive")
+    monkeypatch.setattr(update, "schema", lambda: "unexpected")
+    with pytest.raises(RuntimeError, match="archive retained"):
+        update.recover()
+    assert update.backup.exists() and update.pending.exists()
+
+
+def test_started_candidate_cannot_automatically_restore_possible_writes(updater, monkeypatch):
+    update, state = updater
+    update.previous.write_text(update.env.read_text())
+    update.candidate.write_text(module.image_env(update.env.read_text(), "new-api", "new-web"))
+    update.backup.write_bytes(b"archive")
+    update.pending.write_text(
+        json.dumps(
+            {
+                "previous_state": state,
+                "target_sha": NEW,
+                "target_schema": "0005_sizing",
+                "migration": True,
+                "candidate_started": True,
+            }
+        )
+    )
+    monkeypatch.setattr(update, "schema", lambda: "0005_sizing")
+    monkeypatch.setattr(
+        update,
+        "ready",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("candidate unhealthy")),
+    )
+    monkeypatch.setattr(update, "compose", lambda *args: pytest.fail("Must not restore DB"))
+    with pytest.raises(RuntimeError, match="may have accepted writes"):
+        update.recover()
+    assert update.pending.exists() and update.backup.exists()

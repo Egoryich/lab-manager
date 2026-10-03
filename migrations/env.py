@@ -3,8 +3,11 @@ import asyncio
 from alembic import context
 from lab_manager import (
     catalog_models,  # noqa: F401
+    network_models,  # noqa: F401
     nodes,  # noqa: F401
     operation_models,  # noqa: F401
+    reservation_models,  # noqa: F401
+    runtime_models,  # noqa: F401
 )
 from lab_manager.config import Settings
 from lab_manager.models import Base

@@ -22,6 +22,10 @@
 
 456.3 GiB × 90% ≈ 410.7 GiB — только арифметический верхний предел до дополнительных запасов, не доступное место. Нужны свежие thin data/metadata, logical quotas, CT 201, snapshots и hibernation states. Один HDD требует измерения задержек массового запуска/сохранения RAM.
 
+### Свежий снимок storage — 30 сентября
+
+Пользователь выполнил `pvesm status`, `lvs --units g -o vg_name,lv_name,lv_size,data_percent,metadata_percent,lv_attr` и `lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS`. `student-lvm` находится на отдельном HDD 465.8G: thin pool 456.32g, data 0.21%, metadata 0.39%, уже есть внешний виртуальный диск 10.00g. На системном SSD 111.8G находятся `local` (`/`, 32g; 24 680 220 KiB доступны по pvesm) и `local-lvm` (thin pool 63.00g, data 1.50%, metadata 1.63%, внешний виртуальный диск 12.00g). `local` и `local-lvm` конкурируют за один физический SSD и не суммируются как два независимых устройства. Уровни data/metadata отражают текущую физическую занятость thin pool, а размеры уже созданных гостевых дисков — логические обязательства. Эти данные не разрешают admission сами по себе: нужно учитывать будущие диски и QEMU hibernation, snapshot/admin usage, резерв 10% и проверять thin metadata.
+
 ## VPS
 
 Пользователь сообщил: 1 vCPU 3–3.3 GHz, 1 GB RAM, 10 GB NVMe, канал 1 Gbit/s. Подтверждены Ubuntu 26.04.1 LTS и отдельный домен приложения. После первого запуска: RAM 955 MiB всего, 490 MiB available; корневая файловая система 8.6 GiB, свободно около 4 GiB; swap отсутствует. Это снимок первого запуска, не текущие измерения. Месячный traffic cap неизвестен.
