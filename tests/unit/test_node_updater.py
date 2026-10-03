@@ -82,6 +82,32 @@ def test_release_requires_exact_assets_and_pinned_digests(monkeypatch):
         updater.release_assets(NEW)
 
 
+def test_relocated_venv_entrypoints_are_reinstalled_from_verified_wheel(tmp_path, monkeypatch):
+    calls = []
+    broken_once = True
+
+    def run(*args, **kwargs):
+        nonlocal broken_once
+        calls.append(args)
+        if args[0].endswith("lab-node-agent") and broken_once:
+            broken_once = False
+            raise updater.UpdateError("COMMAND_FAILED:lab-node-agent")
+        return ""
+
+    monkeypatch.setattr(updater, "run", run)
+    updater.verify_entrypoints(tmp_path, "agent.whl")
+    assert any("--force-reinstall" in call for call in calls)
+    assert any(call[0].endswith("lab-node-policy") and "--help" in call for call in calls)
+
+
+def test_valid_entrypoints_need_no_reinstall(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(updater, "run", lambda *args, **kwargs: calls.append(args) or "")
+    updater.verify_entrypoints(tmp_path, "agent.whl")
+    assert len(calls) == 2
+    assert all("--force-reinstall" not in call for call in calls)
+
+
 def test_failed_activation_restores_previous_release_and_blocks_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "BASE", tmp_path)
     monkeypatch.setattr(updater, "STATE_DIR", tmp_path / "update-state")

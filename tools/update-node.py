@@ -177,10 +177,36 @@ def validate_staged(target, assets, wheel):
     return target
 
 
+def verify_entrypoints(target, wheel):
+    """Entry point shebangs must refer to the final release path, not .incoming."""
+    scripts = ("lab-node-agent", "lab-node-policy")
+    try:
+        for name in scripts:
+            run(str(target / "venv/bin" / name), "--help")
+    except UpdateError:
+        # pip writes absolute shebangs while the wheel is staged in .incoming.
+        # Reinstalling the already-verified local wheel at its final path fixes them.
+        run(
+            str(target / "venv/bin/python"),
+            "-m",
+            "pip",
+            "--disable-pip-version-check",
+            "install",
+            "--no-index",
+            "--no-deps",
+            "--force-reinstall",
+            str(target / wheel),
+        )
+        for name in scripts:
+            run(str(target / "venv/bin" / name), "--help")
+
+
 def download_release(sha, assets, wheel):
     target = release_path(sha)
     if target.exists():
-        return validate_staged(target, assets, wheel)
+        validate_staged(target, assets, wheel)
+        verify_entrypoints(target, wheel)
+        return target
     temporary = target.with_name(".incoming-" + sha)
     if temporary.exists():
         raise UpdateError("INCOMPLETE_STAGING_EXISTS")
@@ -226,9 +252,11 @@ def download_release(sha, assets, wheel):
         run("chmod", "-R", "a+rX", str(temporary / "venv"))
         validate_staged(temporary, assets, wheel)
         os.replace(temporary, target)
+        verify_entrypoints(target, wheel)
         return target
     except Exception:
-        shutil.rmtree(temporary)
+        if temporary.exists():
+            shutil.rmtree(temporary)
         raise
 
 
