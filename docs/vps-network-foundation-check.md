@@ -2,13 +2,25 @@
 
 Этот этап проверяет адресный пул и исправную поставку учёта подсетей. Он **не** разрешает создание гостевых машин: на Proxmox по-прежнему `admission_ready=false`, а реальная изоляция `ISOLATED`/`GROUP_LAN` будет проверяться в следующем этапе на гостях.
 
-После успешного CI и очередного автоматического обновления `dev-vps` выполнить в root shell VPS **одну команду**:
+После успешного CI и очередного автоматического обновления `dev-vps` выполнить в root shell VPS **один блок**. Updater обновляет контейнеры, но намеренно не переключает Git checkout; перед проверкой блок безопасно выравнивает его с активным выпуском.
 
 ```bash
-python3 /opt/lab-manager/repo/tools/verify-vps-network-foundation.py
+bash <<'SH'
+set -euo pipefail
+cd /opt/lab-manager/repo
+test ! -e /opt/lab-manager/update-state/pending.json
+test -z "$(git status --porcelain --untracked-files=no)"
+release=$(python3 -c 'import json; print(json.load(open("/opt/lab-manager/update-state/state.json"))["active_sha"])')
+git cat-file -e "${release}^{commit}"
+git merge-base --is-ancestor "$(git rev-parse HEAD)" "$release"
+git checkout --detach "$release"
+python3 tools/verify-vps-network-foundation.py
+SH
 ```
 
-Скрипт только читает состояние. Он не печатает `.env.vps`, ключи mTLS или токены и не меняет Docker, маршруты, БД либо systemd. Ожидаемый итог — `Result: PASS (7/7 checks)`.
+Блок прекращает работу при незавершённом обновлении, локальных изменениях отслеживаемых файлов или неподходящей истории Git. Переключение checkout не меняет работающие контейнеры. Сам скрипт только читает состояние: он не печатает `.env.vps`, ключи mTLS или токены и не меняет Docker, маршруты, БД либо systemd. Ожидаемый итог — `Result: PASS (7/7 checks)`.
+
+03.10.2026 блок выполнен на VPS: все семь пунктов прошли, активный выпуск и схема `0007_network` совпали с API, worker и БД; осталось 5.1 GiB свободного места. Это закрывает подготовку сети и учёта адресов, но допуск гостевых машин по-прежнему закрыт.
 
 Проверяются:
 
