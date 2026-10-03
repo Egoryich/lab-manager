@@ -1,5 +1,7 @@
 import importlib.util
+import io
 import ipaddress
+import json
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location(
@@ -29,3 +31,22 @@ def test_vps_interface_and_docker_overlap_are_reported():
         "interface test0 10.70.1.0/24",
         "Docker guest 10.70.8.0/24",
     ]
+
+
+def test_lesson_api_check_uses_mounted_openapi_path(monkeypatch):
+    class Response(io.BytesIO):
+        status = 200
+
+        def geturl(self):
+            return "http://127.0.0.1:18000/api/openapi.json"
+
+    class Opener:
+        def open(self, url, timeout):
+            assert url == "http://127.0.0.1:18000/api/openapi.json"
+            assert timeout == 10
+            return Response(
+                json.dumps({"paths": dict.fromkeys(check.REQUIRED_API_ROUTES, {})}).encode()
+            )
+
+    monkeypatch.setattr(check, "OPENER", Opener())
+    assert "lesson preview" in check.check_api_routes()

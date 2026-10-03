@@ -1,4 +1,4 @@
-"""Read-only, single-command VPS check before enabling student networking."""
+"""Read-only, single-command VPS deployment and network foundation check."""
 
 import argparse
 import ipaddress
@@ -15,6 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = ROOT.parent / "update-state"
 SHA = re.compile(r"[0-9a-f]{40}")
 NETWORK_BASELINE = "e6fbbc8d97adbccd238cf9b905194d7f20964268"
+REQUIRED_API_ROUTES = {
+    "/api/admin/nodes/{node_id}/resource-policy",
+    "/api/environments/{environment_id}/lesson-preview",
+}
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -182,6 +186,19 @@ def check_readiness():
     return "local and public HTTPS API readiness returned 200"
 
 
+def check_api_routes():
+    # The application mounts OpenAPI under /api; /openapi.json is intentionally 404.
+    url = "http://127.0.0.1:18000/api/openapi.json"
+    with OPENER.open(url, timeout=10) as response:
+        if response.status != 200 or response.geturl() != url:
+            raise RuntimeError("API contract endpoint failed")
+        paths = json.load(response)["paths"]
+    missing = REQUIRED_API_ROUTES - paths.keys()
+    if missing:
+        raise RuntimeError("lesson planning API routes are missing")
+    return "node resource policy and lesson preview routes are available"
+
+
 def check_node(management_bridge, guest_bridge):
     code = (
         "import json; from lab_manager.node_transport import load_endpoints,fetch; "
@@ -227,6 +244,7 @@ def main():
         ("Services", check_services),
         ("Schema", check_schema),
         ("HTTPS", check_readiness),
+        ("Lesson API", check_api_routes),
         ("Proxmox inventory", lambda: check_node(args.management_bridge, args.guest_bridge)),
         ("Disk", check_space),
     )
