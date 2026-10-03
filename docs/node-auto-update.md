@@ -69,3 +69,46 @@ print("Допуск машин:", sample["admission_ready"])
 Перед сменой версии updater сохраняет `pending.json`. Если новый агент не запустился или не записал читаемый снимок, он возвращает прежний symlink, перезапускает старую службу и блокирует неудачный SHA. При прерывании процесса следующий запуск разбирает pending-состояние; неизвестное состояние оставляется для ручного восстановления. Updater не удаляет старые releases и не выполняет автоматическую очистку диска. Не удаляйте текущий или предыдущий каталог выпуска.
 
 Первая установка подтверждена на Proxmox для выпуска `edc3f88ffee4f7476a3575dc6a0f275cbbfc3b67`: внешний digest `SHA256SUMS` и все файлы релиза прошли проверку, wheel установился в отдельный venv, рабочий выпуск `ec27a8d5121fc53f5237239e344020342a8a01d5` принят как исходный, таймер включён. После фонового обновления активный SHA стал `edc3f88ffee4f7476a3575dc6a0f275cbbfc3b67`; служба updater завершилась с `Result=success`, `ExecMainStatus=0`, агент и таймер снимков активны. VPS worker после обновления успешно получил свежий снимок по mTLS с обоими thin-хранилищами (`local-lvm` и `student-lvm`). Допуск учебных машин остаётся `false` до завершения проверок вместимости и сети.
+
+03.10.2026 на Proxmox подтверждено восстановление запускаемых команд выпуска `b44c95c47f6c49486a42f5ca279fe4646c5c72eb`. Предыдущая проверка обнаружила ошибку `lab-node-policy: cannot execute: required file not found`: команда существовала, но её shebang ссылался на удалённый временный каталог. В следующем запуске пользователь проверил активный SHA и отсутствие pending-обновления, манифест релиза, внешний digest файла updater, локально переустановил тот же wheel `0.9.0` по конечному пути и установил исправленный updater. Затем `lab-node-policy --help`, активность агента и deny-only guard, наличие обеих nftables-таблиц, `nft --check` с двумя режимами и проверка правил завершились сообщением `PASS`. Правила были только сформированы и проверены, но не применены.
+
+Успешная процедура для этого конкретного выпуска (root shell; без адресов и секретов):
+
+```bash
+set -euo pipefail
+release='b44c95c47f6c49486a42f5ca279fe4646c5c72eb'
+stage="/opt/lab-manager-node/releases/$release"
+systemctl start lab-node-update.service
+test "$(python3 -c 'import json; print(json.load(open("/opt/lab-manager-node/update-state/state.json"))["active_sha"])')" = "$release"
+test ! -e /opt/lab-manager-node/update-state/pending.json
+test -d "$stage"
+systemctl stop lab-node-update.timer
+trap 'systemctl start lab-node-update.timer' EXIT
+exec 9>/opt/lab-manager-node/update-state/update.lock
+flock -n 9
+(cd "$stage" && sha256sum --check --strict SHA256SUMS >/dev/null)
+printf '%s  %s\n' \
+  '3be2be3d267e5493f34242ea345bf5e00a05769110d8e0f61366703c66351298' \
+  "$stage/update-node.py" | sha256sum --check --strict
+"$stage/venv/bin/python" -m pip --disable-pip-version-check install \
+  --no-index --no-deps --force-reinstall \
+  "$stage/lab_node_agent-0.9.0-py3-none-any.whl"
+install -o root -g root -m 0644 "$stage/update-node.py" \
+  /usr/local/lib/lab-manager-node/update-node.py
+policy="$stage/venv/bin/lab-node-policy"
+"$policy" --help >/dev/null
+systemctl is-active --quiet lab-node-agent.service lab-node-network-guard.service
+nft list table inet lab_manager >/dev/null
+nft list table bridge lab_manager_l2 >/dev/null
+config=$(mktemp)
+rules=$(mktemp)
+trap 'rm -f "$config" "$rules"; systemctl start lab-node-update.timer' EXIT
+printf '[{"bridge":"lmbrgroup1","mode":"GROUP_LAN"},{"bridge":"lmbrsolo1","mode":"ISOLATED"}]\n' > "$config"
+"$policy" "$config" > "$rules"
+nft --check --file "$rules"
+grep -Fq 'meta ibrname "lmbrgroup1" accept' "$rules"
+! grep -Fq 'meta ibrname "lmbrsolo1" accept' "$rules"
+echo 'PASS: запускатель восстановлен, updater обновлён, оба режима проверены'
+```
+
+Процедура историческая и привязана к указанному SHA. Для следующих обновлений исправленный updater сам проверяет запускатели после переноса venv; повторять `pip --force-reinstall` вручную не требуется.
