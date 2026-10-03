@@ -485,6 +485,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/nodes/{node_id}/resource-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Node Policy */
+        get: operations["get_node_policy_api_admin_nodes__node_id__resource_policy_get"];
+        /** Put Node Policy */
+        put: operations["put_node_policy_api_admin_nodes__node_id__resource_policy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/environments/{environment_id}/lesson-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview Lesson */
+        get: operations["preview_lesson_api_environments__environment_id__lesson_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -684,6 +719,40 @@ export interface components {
             /** Uptime Seconds */
             uptime_seconds: number;
         };
+        /** LessonPreview */
+        LessonPreview: {
+            /**
+             * Environment Id
+             * Format: uuid
+             */
+            environment_id: string;
+            /** Group Version */
+            group_version: number;
+            /** Student Count */
+            student_count: number;
+            total: components["schemas"]["ResourceTotal"];
+            /** Within Per Environment Limits */
+            within_per_environment_limits: boolean;
+            /**
+             * Starts At
+             * Format: date-time
+             */
+            starts_at: string;
+            /**
+             * Ends At
+             * Format: date-time
+             */
+            ends_at: string;
+            /** Reasons */
+            reasons: string[];
+            /** Nodes */
+            nodes: components["schemas"]["NodeCapacityPreview"][];
+            /**
+             * Reservation Created
+             * @default false
+             */
+            reservation_created: boolean;
+        };
         /** Login */
         Login: {
             /** Username */
@@ -702,6 +771,71 @@ export interface components {
             vcpu: number;
             /** Disk Gib */
             disk_gib: number;
+        };
+        /** NodeCapacityPreview */
+        NodeCapacityPreview: {
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /** Node Name */
+            node_name: string;
+            /** Storage Name */
+            storage_name: string;
+            /** Available */
+            available: boolean;
+            /** Reasons */
+            reasons: string[];
+            /** Ram Headroom Mib */
+            ram_headroom_mib?: number | null;
+            /** Cpu Headroom Millicredits */
+            cpu_headroom_millicredits?: number | null;
+            /** Storage Headroom Bytes */
+            storage_headroom_bytes?: number | null;
+        };
+        /** NodePolicyInput */
+        NodePolicyInput: {
+            /** Storage Name */
+            storage_name: string;
+            /** Host Reserve Mib */
+            host_reserve_mib: number;
+            /** Infrastructure Reserve Mib */
+            infrastructure_reserve_mib: number;
+            /** Safety Reserve Mib */
+            safety_reserve_mib: number;
+            /** Cpu Millicredits Per Logical Cpu */
+            cpu_millicredits_per_logical_cpu: number;
+            /** Storage Free Percent */
+            storage_free_percent: number;
+            /** Thin Metadata Limit Percent */
+            thin_metadata_limit_percent: number;
+            /** Expected Version */
+            expected_version: number;
+        };
+        /** NodePolicyView */
+        NodePolicyView: {
+            /**
+             * Node Id
+             * Format: uuid
+             */
+            node_id: string;
+            /** Storage Name */
+            storage_name: string;
+            /** Host Reserve Mib */
+            host_reserve_mib: number;
+            /** Infrastructure Reserve Mib */
+            infrastructure_reserve_mib: number;
+            /** Safety Reserve Mib */
+            safety_reserve_mib: number;
+            /** Cpu Millicredits Per Logical Cpu */
+            cpu_millicredits_per_logical_cpu: number;
+            /** Storage Free Percent */
+            storage_free_percent: number;
+            /** Thin Metadata Limit Percent */
+            thin_metadata_limit_percent: number;
+            /** Version */
+            version: number;
         };
         /** NodeView */
         NodeView: {
@@ -4028,6 +4162,295 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NodeView"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    get_node_policy_api_admin_nodes__node_id__resource_policy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodePolicyView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    put_node_policy_api_admin_nodes__node_id__resource_policy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodePolicyInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodePolicyView"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorView"];
+                };
+            };
+        };
+    };
+    preview_lesson_api_environments__environment_id__lesson_preview_get: {
+        parameters: {
+            query: {
+                starts_at: string;
+                ends_at: string;
+            };
+            header?: never;
+            path: {
+                environment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LessonPreview"];
                 };
             };
             /** @description Bad Request */

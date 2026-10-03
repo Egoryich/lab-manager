@@ -208,6 +208,81 @@ async def test_incomplete_agent_snapshot_never_creates_a_reservation(app, seed):
         assert await db.scalar(select(func.count()).select_from(LessonReservation)) == 0
 
 
+async def test_lesson_preview_is_scoped_and_never_books(app, seed, session, client_factory):
+    teacher = await seed("TEACHER")
+    other = await seed("TEACHER")
+    node_id, environments = await setup(app, [teacher.id])
+    start = datetime.now(UTC) + timedelta(hours=1)
+    params = {"starts_at": start.isoformat(), "ends_at": (start + timedelta(hours=2)).isoformat()}
+    path = f"/api/environments/{environments[0]}/lesson-preview"
+    async with client_factory() as owner, client_factory() as stranger:
+        await session(owner, teacher)
+        await session(stranger, other)
+        assert (await stranger.get(path, params=params)).status_code == 404
+        result = await owner.get(path, params=params)
+        assert result.status_code == 200, result.text
+        preview = result.json()
+        assert preview["reservation_created"] is False
+        assert preview["student_count"] == 0
+        assert preview["nodes"][0]["node_id"] == str(node_id)
+        assert preview["nodes"][0]["available"] is False
+        assert "GROUP_EMPTY" in preview["nodes"][0]["reasons"]
+    async with app.state.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(LessonReservation)) == 0
+
+
+async def test_same_environment_cannot_be_booked_on_two_nodes(app, seed):
+    teacher = await seed("TEACHER")
+    first_node, environments = await setup(app, [teacher.id])
+    second_node = uuid.uuid4()
+    async with app.state.sessions() as db, db.begin():
+        source = await db.get(NodeObservation, first_node)
+        now = await db.scalar(select(func.clock_timestamp()))
+        db.add(
+            NodeObservation(
+                id=second_node,
+                name="Second synthetic node",
+                attempt_started_at=now,
+                last_contact_at=now,
+                sample_finished_at=now,
+                payload=source.payload,
+            )
+        )
+        await db.flush()
+        db.add(
+            NodeResourcePolicy(
+                node_id=second_node,
+                storage_name="student-lvm",
+                host_reserve_mib=1024,
+                infrastructure_reserve_mib=512,
+                safety_reserve_mib=512,
+                cpu_millicredits_per_logical_cpu=1000,
+                storage_free_percent=10,
+                thin_metadata_limit_percent=80,
+            )
+        )
+        await db.flush()
+        db.add(NodeResourceLedger(node_id=second_node))
+    start = datetime.now(UTC) + timedelta(hours=1)
+
+    async def book(node_id):
+        return await reserve_lesson(
+            app.state.sessions,
+            node_id=node_id,
+            environment_id=environments[0],
+            teacher_id=teacher.id,
+            request_id=uuid.uuid4(),
+            starts_at=start,
+            ends_at=start + timedelta(hours=2),
+            demand=ResourceDemand(memory_mib=512, cpu_millicredits=1000, disk_bytes=GIB),
+        )
+
+    result = await asyncio.gather(book(first_node), book(second_node), return_exceptions=True)
+    assert sum(isinstance(item, LessonReservation) for item in result) == 1
+    rejected = next(item for item in result if isinstance(item, AdmissionRejected))
+    assert rejected.reasons == ("ENVIRONMENT_ALREADY_BOOKED",)
+
+
 async def test_cancelling_lesson_preserves_materialized_disk(app, seed):
     teacher = await seed("TEACHER")
     node_id, environments = await setup(app, [teacher.id])

@@ -24,6 +24,23 @@ const errors: Record<string, string> = {
   WORKER_RETRY_REQUIRED: 'Обработчик повторит проверку автоматически.',
   WORKER_RETRY_EXHAUSTED: 'Проверка прерывалась несколько раз. Обратитесь к администратору.',
 };
+const capacityReasons: Record<string, string> = {
+  NODE_POLICY_MISSING: 'Администратор ещё не выбрал учебное хранилище и резервы сервера.',
+  NODE_NOT_ADMISSION_READY: 'Сеть и учёт машин на сервере ещё не прошли проверку.',
+  INVENTORY_MISSING: 'Нет свежего снимка сервера.',
+  INVENTORY_INCOMPLETE: 'В снимке сервера не хватает данных для расчёта.',
+  INVENTORY_STALE: 'Снимок сервера устарел.',
+  GUEST_OWNERSHIP_UNKNOWN: 'Не завершена сверка принадлежности машин.',
+  GROUP_EMPTY: 'В группе пока нет студентов.',
+  GROUP_ARCHIVED: 'Группа закрыта.',
+  PROFILE_FORBIDDEN: 'Профиль больше не разрешён политикой преподавателя.',
+  QUOTA_EXCEEDED: 'Размер группы превышает лимиты преподавателя.',
+  ENVIRONMENT_ALREADY_BOOKED: 'Для этого окружения уже есть занятие в выбранное время.',
+  ENVIRONMENT_BOUND_TO_OTHER_NODE: 'Диски окружения закреплены за другим сервером.',
+  RAM_INSUFFICIENT: 'Недостаточно оперативной памяти.',
+  CPU_INSUFFICIENT: 'Недостаточно вычислительного ресурса.',
+  STORAGE_INSUFFICIENT: 'Недостаточно места на учебном хранилище.',
+};
 
 export function EnvironmentValidation({ environment }: { environment: Environment }) {
   const cache = useQueryClient();
@@ -56,6 +73,20 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
     },
     onError: () => {
       cache.invalidateQueries({ queryKey: key });
+    },
+  });
+  const preview = useMutation({
+    mutationFn: async (form: FormData) => {
+      const start = new Date(String(form.get('starts_at')));
+      const end = new Date(String(form.get('ends_at')));
+      return unwrap(
+        await api.GET('/api/environments/{environment_id}/lesson-preview', {
+          params: {
+            path: { environment_id: environment.id },
+            query: { starts_at: start.toISOString(), ends_at: end.toISOString() },
+          },
+        }),
+      );
     },
   });
   const operation = operations.data?.[0];
@@ -101,6 +132,65 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
               </small>
             </>
           )}
+        </div>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          preview.mutate(new FormData(event.currentTarget));
+        }}
+      >
+        <div className="field-grid">
+          <label>
+            Начало занятия
+            <input name="starts_at" type="datetime-local" required />
+          </label>
+          <label>
+            Конец занятия
+            <input name="ends_at" type="datetime-local" required />
+          </label>
+        </div>
+        <button type="submit" disabled={preview.isPending}>
+          Проверить доступность сервера
+        </button>
+      </form>
+      {preview.error && (
+        <p role="alert" className="error">
+          {preview.error.message}
+        </p>
+      )}
+      {preview.data && (
+        <div role="status">
+          <p>
+            Предварительный расчёт: {preview.data.student_count} студентов и демо,{' '}
+            {preview.data.total.memory_mib} MiB RAM,{' '}
+            {(preview.data.total.disk_bytes / 2 ** 30).toFixed(1)} GiB дисков.
+          </p>
+          {preview.data.nodes.length === 0 && <p>Учебный сервер ещё не настроен.</p>}
+          {preview.data.reasons.length > 0 && (
+            <ul>
+              {preview.data.reasons.map((reason) => (
+                <li key={reason}>{capacityReasons[reason] ?? reason}</li>
+              ))}
+            </ul>
+          )}
+          {preview.data.nodes.map((node) => (
+            <div key={node.node_id}>
+              <strong>
+                {node.node_name}: {node.available ? 'ресурсы доступны' : 'запуск пока невозможен'}
+              </strong>
+              {node.reasons.length > 0 && (
+                <ul>
+                  {node.reasons.map((reason) => (
+                    <li key={reason}>{capacityReasons[reason] ?? reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+          <small>
+            Это снимок доступности, бронь не создана. При бронировании расчёт повторится.
+          </small>
         </div>
       )}
     </div>

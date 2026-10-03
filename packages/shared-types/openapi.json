@@ -3741,6 +3741,373 @@
           }
         }
       }
+    },
+    "/api/admin/nodes/{node_id}/resource-policy": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Get Node Policy",
+        "operationId": "get_node_policy_api_admin_nodes__node_id__resource_policy_get",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Node Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodePolicyView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "nodes"
+        ],
+        "summary": "Put Node Policy",
+        "operationId": "put_node_policy_api_admin_nodes__node_id__resource_policy_put",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Node Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodePolicyInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodePolicyView"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
+    },
+    "/api/environments/{environment_id}/lesson-preview": {
+      "get": {
+        "tags": [
+          "Lessons"
+        ],
+        "summary": "Preview Lesson",
+        "operationId": "preview_lesson_api_environments__environment_id__lesson_preview_get",
+        "parameters": [
+          {
+            "name": "environment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Environment Id"
+            }
+          },
+          {
+            "name": "starts_at",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Starts At"
+            }
+          },
+          {
+            "name": "ends_at",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Ends At"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorView"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4265,6 +4632,72 @@
         ],
         "title": "HostObservation"
       },
+      "LessonPreview": {
+        "properties": {
+          "environment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Environment Id"
+          },
+          "group_version": {
+            "type": "integer",
+            "title": "Group Version"
+          },
+          "student_count": {
+            "type": "integer",
+            "title": "Student Count"
+          },
+          "total": {
+            "$ref": "#/components/schemas/ResourceTotal"
+          },
+          "within_per_environment_limits": {
+            "type": "boolean",
+            "title": "Within Per Environment Limits"
+          },
+          "starts_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Starts At"
+          },
+          "ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Ends At"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/NodeCapacityPreview"
+            },
+            "type": "array",
+            "title": "Nodes"
+          },
+          "reservation_created": {
+            "type": "boolean",
+            "title": "Reservation Created",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "environment_id",
+          "group_version",
+          "student_count",
+          "total",
+          "within_per_environment_limits",
+          "starts_at",
+          "ends_at",
+          "reasons",
+          "nodes"
+        ],
+        "title": "LessonPreview"
+      },
       "Login": {
         "properties": {
           "username": {
@@ -4320,6 +4753,195 @@
           "disk_gib"
         ],
         "title": "MachineSizing"
+      },
+      "NodeCapacityPreview": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Node Id"
+          },
+          "node_name": {
+            "type": "string",
+            "title": "Node Name"
+          },
+          "storage_name": {
+            "type": "string",
+            "title": "Storage Name"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "ram_headroom_mib": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ram Headroom Mib"
+          },
+          "cpu_headroom_millicredits": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cpu Headroom Millicredits"
+          },
+          "storage_headroom_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Headroom Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "node_name",
+          "storage_name",
+          "available",
+          "reasons"
+        ],
+        "title": "NodeCapacityPreview"
+      },
+      "NodePolicyInput": {
+        "properties": {
+          "storage_name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+            "title": "Storage Name"
+          },
+          "host_reserve_mib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 0.0,
+            "title": "Host Reserve Mib"
+          },
+          "infrastructure_reserve_mib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 0.0,
+            "title": "Infrastructure Reserve Mib"
+          },
+          "safety_reserve_mib": {
+            "type": "integer",
+            "maximum": 1048576.0,
+            "minimum": 0.0,
+            "title": "Safety Reserve Mib"
+          },
+          "cpu_millicredits_per_logical_cpu": {
+            "type": "integer",
+            "maximum": 4000.0,
+            "minimum": 1.0,
+            "title": "Cpu Millicredits Per Logical Cpu"
+          },
+          "storage_free_percent": {
+            "type": "integer",
+            "maximum": 50.0,
+            "minimum": 10.0,
+            "title": "Storage Free Percent"
+          },
+          "thin_metadata_limit_percent": {
+            "type": "integer",
+            "maximum": 99.0,
+            "minimum": 1.0,
+            "title": "Thin Metadata Limit Percent"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "storage_name",
+          "host_reserve_mib",
+          "infrastructure_reserve_mib",
+          "safety_reserve_mib",
+          "cpu_millicredits_per_logical_cpu",
+          "storage_free_percent",
+          "thin_metadata_limit_percent",
+          "expected_version"
+        ],
+        "title": "NodePolicyInput"
+      },
+      "NodePolicyView": {
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Node Id"
+          },
+          "storage_name": {
+            "type": "string",
+            "title": "Storage Name"
+          },
+          "host_reserve_mib": {
+            "type": "integer",
+            "title": "Host Reserve Mib"
+          },
+          "infrastructure_reserve_mib": {
+            "type": "integer",
+            "title": "Infrastructure Reserve Mib"
+          },
+          "safety_reserve_mib": {
+            "type": "integer",
+            "title": "Safety Reserve Mib"
+          },
+          "cpu_millicredits_per_logical_cpu": {
+            "type": "integer",
+            "title": "Cpu Millicredits Per Logical Cpu"
+          },
+          "storage_free_percent": {
+            "type": "integer",
+            "title": "Storage Free Percent"
+          },
+          "thin_metadata_limit_percent": {
+            "type": "integer",
+            "title": "Thin Metadata Limit Percent"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "node_id",
+          "storage_name",
+          "host_reserve_mib",
+          "infrastructure_reserve_mib",
+          "safety_reserve_mib",
+          "cpu_millicredits_per_logical_cpu",
+          "storage_free_percent",
+          "thin_metadata_limit_percent",
+          "version"
+        ],
+        "title": "NodePolicyView"
       },
       "NodeView": {
         "properties": {

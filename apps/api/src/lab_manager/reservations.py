@@ -154,6 +154,11 @@ async def reserve_lesson(
         if ledger is None:
             raise AdmissionRejected("NODE_POLICY_MISSING")
         now = await db.scalar(select(func.clock_timestamp()))
+        environment = await db.scalar(
+            select(Environment).where(Environment.id == environment_id).with_for_update()
+        )
+        if environment is None or environment.owner_teacher_id != teacher_id:
+            raise AdmissionRejected("ENVIRONMENT_NOT_OWNED")
         existing = await db.scalar(
             select(LessonReservation).where(
                 LessonReservation.teacher_id == teacher_id,
@@ -177,9 +182,6 @@ async def reserve_lesson(
             raise AdmissionRejected("WINDOW_PAST")
         if starts_at > now + timedelta(days=90):
             raise AdmissionRejected("WINDOW_TOO_FAR")
-        environment = await db.get(Environment, environment_id)
-        if environment is None or environment.owner_teacher_id != teacher_id:
-            raise AdmissionRejected("ENVIRONMENT_NOT_OWNED")
         policy_row = await db.get(NodeResourcePolicy, node_id)
         if policy_row is None:
             raise AdmissionRejected("NODE_POLICY_MISSING")
@@ -200,7 +202,20 @@ async def reserve_lesson(
                 )
             )
         )
-        if any(item.environment_id == environment_id for item in overlapping):
+        already_booked = await db.scalar(
+            select(LessonReservation.id)
+            .where(
+                LessonReservation.environment_id == environment_id,
+                or_(
+                    LessonReservation.state == "ACTIVE",
+                    (LessonReservation.state == "RESERVED")
+                    & (LessonReservation.starts_at < ends_at)
+                    & (LessonReservation.ends_at > starts_at),
+                ),
+            )
+            .limit(1)
+        )
+        if already_booked is not None:
             raise AdmissionRejected("ENVIRONMENT_ALREADY_BOOKED")
         allocations = list(
             await db.scalars(
@@ -211,9 +226,9 @@ async def reserve_lesson(
         )
         if any(item.storage_name != policy_row.storage_name for item in allocations):
             raise AdmissionRejected("STORAGE_POLICY_CHANGED")
-        own_disk = next(
-            (item for item in allocations if item.environment_id == environment_id), None
-        )
+        own_disk = await db.get(EnvironmentDiskAllocation, environment_id)
+        if own_disk and own_disk.node_id != node_id:
+            raise AdmissionRejected("ENVIRONMENT_BOUND_TO_OTHER_NODE")
         if own_disk and (
             own_disk.disk_bytes != demand.disk_bytes
             or own_disk.hibernation_bytes != demand.hibernation_bytes
