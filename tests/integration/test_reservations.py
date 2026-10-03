@@ -19,7 +19,14 @@ from lab_manager.reservation_models import (
     NodeResourcePolicy,
 )
 from lab_manager.reservations import AdmissionRejected, cancel_future_lesson, reserve_lesson
+from lab_manager.runtime_models import (
+    EnvironmentRun,
+    ProviderRuntimeBinding,
+    RunRuntime,
+    Runtime,
+)
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.integration
 
@@ -286,3 +293,108 @@ async def test_overdue_active_lesson_keeps_compute_until_confirmed_stop(app, see
             demand=ResourceDemand(memory_mib=512, cpu_millicredits=1000, disk_bytes=10 * GIB),
         )
     assert "RAM_INSUFFICIENT" in error.value.reasons
+
+
+async def test_run_and_runtime_identities_preserve_boundaries(app, seed):
+    teachers = [await seed("TEACHER") for _ in range(2)]
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id for teacher in teachers])
+    begins = datetime.now(UTC) + timedelta(hours=1)
+    booking = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environments[0],
+        teacher_id=teachers[0].id,
+        request_id=uuid.uuid4(),
+        starts_at=begins,
+        ends_at=begins + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    async with app.state.sessions() as db, db.begin():
+        profile_id = (await db.get(Environment, environments[0])).profile_version_id
+        run = EnvironmentRun(
+            environment_id=environments[0],
+            node_id=node_id,
+            reservation_id=booking.id,
+            generation=1,
+        )
+        demo = Runtime(
+            environment_id=environments[0],
+            node_id=node_id,
+            role="DEMO",
+            student_id=None,
+            membership_generation=None,
+            profile_version_id=profile_id,
+            kind="LXC",
+            memory_mib=512,
+            vcpu=1,
+            disk_gib=10,
+        )
+        learner = Runtime(
+            environment_id=environments[0],
+            node_id=node_id,
+            role="STUDENT",
+            student_id=student.id,
+            membership_generation=1,
+            profile_version_id=profile_id,
+            kind="LXC",
+            memory_mib=512,
+            vcpu=1,
+            disk_gib=10,
+        )
+        db.add_all((run, demo, learner))
+        await db.flush()
+        db.add_all(
+            (
+                RunRuntime(run_id=run.id, runtime_id=demo.id, environment_id=environments[0]),
+                RunRuntime(run_id=run.id, runtime_id=learner.id, environment_id=environments[0]),
+                ProviderRuntimeBinding(
+                    runtime_id=demo.id,
+                    node_id=node_id,
+                    vmid=510,
+                    ownership_marker="lab:" + str(demo.id),
+                    generation=1,
+                ),
+            )
+        )
+        await db.flush()
+
+        with pytest.raises(IntegrityError):
+            async with db.begin_nested():
+                db.add(
+                    ProviderRuntimeBinding(
+                        runtime_id=learner.id,
+                        node_id=node_id,
+                        vmid=510,
+                        ownership_marker="lab:" + str(learner.id),
+                        generation=1,
+                    )
+                )
+                await db.flush()
+
+        foreign = Runtime(
+            environment_id=environments[1],
+            node_id=node_id,
+            role="STUDENT",
+            student_id=student.id,
+            membership_generation=1,
+            profile_version_id=profile_id,
+            kind="LXC",
+            memory_mib=512,
+            vcpu=1,
+            disk_gib=10,
+        )
+        db.add(foreign)
+        await db.flush()
+        with pytest.raises(IntegrityError):
+            async with db.begin_nested():
+                db.add(
+                    RunRuntime(
+                        run_id=run.id,
+                        runtime_id=foreign.id,
+                        environment_id=environments[0],
+                    )
+                )
+                await db.flush()
+
+        assert await db.scalar(select(func.count()).select_from(RunRuntime)) == 2

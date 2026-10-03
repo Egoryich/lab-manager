@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STATE_DIR = ROOT.parent / "update-state"
 SHA = re.compile(r"[0-9a-f]{40}")
+NETWORK_BASELINE = "e6fbbc8d97adbccd238cf9b905194d7f20964268"
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -99,8 +100,9 @@ def check_release():
     )
     if "Result=success" not in properties or "ExecMainStatus=0" not in properties:
         raise RuntimeError("last VPS updater run failed")
-    if state["schema_revision"] != "0007_network":
-        raise RuntimeError("active release has an older database schema")
+    run("git", "merge-base", "--is-ancestor", NETWORK_BASELINE, active)
+    if not re.fullmatch(r"[0-9]{4}_[a-z_]+", state["schema_revision"]):
+        raise RuntimeError("active release has an invalid database schema")
     return f"release {active[:12]}, timer active, no pending update"
 
 
@@ -133,8 +135,9 @@ def check_schema():
         "-Atc",
         "SELECT version_num FROM alembic_version",
     )
-    if revision != "0007_network":
-        raise RuntimeError(f"unexpected database schema {revision}")
+    state = json.loads((STATE_DIR / "state.json").read_text())
+    if revision != state["schema_revision"]:
+        raise RuntimeError(f"database schema differs from active release: {revision}")
     api_revision = compose(
         "exec",
         "-T",
