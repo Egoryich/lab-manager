@@ -18,12 +18,17 @@ jobs:
       - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/install-node-network-guard.sh && python3 -m py_compile tools/update-node.py
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nftables
       - run: sudo nft --check --file infra/proxmox/lab-network-guard.nft
+      - name: Validate generated L2 policy syntax
+        run: |
+          uv run --project apps/node-agent python -c 'from lab_node_agent.network_policy import Segment, SegmentMode, render_l2_policy; print(render_l2_policy((Segment("lmbrgroup1", SegmentMode.GROUP_LAN), Segment("lmbrsolo1", SegmentMode.ISOLATED))))' > /tmp/lab-node-l2.nft
+          sudo nft --check --file /tmp/lab-node-l2.nft
       - run: uv build --project apps/node-agent --wheel --out-dir artifacts/node-agent
       - name: Check standalone installation
         run: |
           python -m venv /tmp/lab-agent-package-test
           /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
           /tmp/lab-agent-package-test/bin/lab-node-agent --help
+          /tmp/lab-agent-package-test/bin/lab-node-policy --help
           /tmp/lab-agent-package-test/bin/python -m lab_node_agent.service --help
           cp infra/proxmox/lab-node-agent.service infra/proxmox/lab-node-storage-snapshot.service infra/proxmox/lab-node-storage-snapshot.timer infra/proxmox/lab-node-update.service infra/proxmox/lab-node-update.timer tools/node-pki.py tools/update-node.py tools/install-node-updater.sh artifacts/node-agent/
           cd artifacts/node-agent
