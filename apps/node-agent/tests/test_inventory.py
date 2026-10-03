@@ -190,7 +190,15 @@ def https_pve(tmp_path):
             self.end_headers()
             resource = self.path.split("/")[-1].split("?")[0]
             payload = (
-                b"x" * 1025 if state.oversized else json.dumps({"data": data()[resource]}).encode()
+                b"x" * 1025
+                if state.oversized
+                else json.dumps(
+                    {
+                        "data": {"description": "lab:runtime-test"}
+                        if resource == "config"
+                        else data()[resource]
+                    }
+                ).encode()
             )
             self.wfile.write(payload)
 
@@ -232,6 +240,21 @@ def test_verified_https_allows_only_fixed_gets_and_refuses_redirect(https_pve, m
     state.redirect = True
     with pytest.raises(InventoryError, match="PROXMOX_REDIRECT_REFUSED"):
         reader.get("status")
+
+
+def test_guest_config_is_narrow_read_only_and_validates_identity(https_pve):
+    config, state = https_pve
+    reader = ProxmoxReader(config)
+    assert reader.guest_config("QEMU", 510) == {"description": "lab:runtime-test"}
+    assert reader.guest_config("LXC", 511) == {"description": "lab:runtime-test"}
+    assert [(method, path) for method, path, _ in state.requests] == [
+        ("GET", "/api2/json/nodes/pve/qemu/510/config"),
+        ("GET", "/api2/json/nodes/pve/lxc/511/config"),
+    ]
+    for kind, vmid in (("QEMU", True), ("QEMU", 99), ("QEMU", 1000000000), ("qemu", 510)):
+        with pytest.raises(InventoryError, match="RESOURCE_NOT_ALLOWED"):
+            reader.guest_config(kind, vmid)
+    assert len(state.requests) == 2
 
 
 def test_certificate_hostname_is_verified(https_pve):
