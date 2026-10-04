@@ -284,9 +284,9 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
     async with app.state.sessions() as db:
         assert (
             await db.scalar(
-                select(func.count()).select_from(NetworkSegmentAllocation).where(
-                    NetworkSegmentAllocation.environment_id == environment_id
-                )
+                select(func.count())
+                .select_from(NetworkSegmentAllocation)
+                .where(NetworkSegmentAllocation.environment_id == environment_id)
             )
             == 2
         )
