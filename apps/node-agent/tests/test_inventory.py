@@ -75,6 +75,7 @@ def test_snapshot_preserves_external_guests_without_admission():
     assert result["guests"][0]["reported_maxdisk_bytes"] == 10 * 2**30
     assert result["guests"][0]["reported_status"] == "stopped"
     assert result["storages"][0]["thin_metadata_percent"] is None
+    assert result["local_thin_sample_finished_at"] is None
     assert result["admission_ready"] is False
     assert result["network_bridges"] == [
         {"name": "vmbr0", "active": True, "ports": ["nic0"]},
@@ -134,6 +135,7 @@ def test_network_observation_failure_does_not_hide_other_inventory():
 
 def test_local_storage_metadata_requires_exact_pool_match_and_never_opens_admission():
     local = {
+        "sample_finished_at": datetime.now(UTC).isoformat(),
         "thin_pools": [
             {
                 "storage": "student-lvm",
@@ -145,11 +147,12 @@ def test_local_storage_metadata_requires_exact_pool_match_and_never_opens_admiss
                 "volumes": [],
                 "ownership_reconciled": False,
             }
-        ]
+        ],
     }
     matched = collect(Reader(), local)
     assert matched["storages"][0]["thin_metadata_percent"] == 0.39
     assert matched["local_thin_pools"][0]["ownership_reconciled"] is False
+    assert matched["local_thin_sample_finished_at"] == local["sample_finished_at"]
     assert matched["admission_ready"] is False
     local["thin_pools"][0]["pool_size_bytes"] += 1
     mismatched = collect(Reader(), local)

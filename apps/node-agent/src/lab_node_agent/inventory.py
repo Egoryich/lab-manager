@@ -177,6 +177,9 @@ def collect(reader, local_storage=None):
         "guests": guests,
         "network_bridges": network_bridges,
         "local_thin_pools": local_pools,
+        "local_thin_sample_finished_at": (
+            local_storage["sample_finished_at"] if local_pools else None
+        ),
         "admission_ready": False,
         "limitations": limitations,
     }
