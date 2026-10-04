@@ -39,7 +39,10 @@ if lvs --noheadings -o lv_name "$storage" | grep -Eq "^[[:space:]]*vm-$vmid-disk
     exit 1
 fi
 pvesm list local --content vztmpl | grep -Fq "$template"
-pvesm status | awk -v name="$storage" '$1 == name && $3 == "active" { found=1 } END { exit !found }'
+pvesm status | awk -v name="$storage" '
+    $1 == name && $3 == "active" && $6 - 4194304 >= $4 * 0.10 { found=1 }
+    END { exit !found }
+'
 
 printf '{"allocation_id":"%s","mode":"ISOLATED","cidr":"10.70.255.248/30"}\n' \
     "$allocation_id" > "$spec"
