@@ -12,7 +12,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from lab_manager.dependencies import DB, Actor, require_role
 from lab_manager.models import Base
+from lab_manager.node_reconciliation import reconcile
 from lab_manager.node_transport import BridgeObservation, HostObservation, NodeTransportError, fetch
+from lab_manager.runtime_models import ProviderRuntimeBinding, RuntimeDisk
 
 
 class NodeObservation(Base):
@@ -98,6 +100,18 @@ async def poll_node(sessions, endpoint):
     except NodeTransportError as error:
         await store_observation(sessions, endpoint, started, error=str(error))
     else:
+        async with sessions() as db:
+            bindings = list(
+                await db.scalars(
+                    select(ProviderRuntimeBinding).where(
+                        ProviderRuntimeBinding.node_id == endpoint.id
+                    )
+                )
+            )
+            disks = list(
+                await db.scalars(select(RuntimeDisk).where(RuntimeDisk.node_id == endpoint.id))
+            )
+        payload["sample"] = reconcile(payload["sample"], bindings, disks)
         await store_observation(sessions, endpoint, started, payload=payload, sampled_at=sampled_at)
 
 

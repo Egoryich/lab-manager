@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from lab_manager.node_transport import NodeTransportError, validate_observation
-from lab_manager.nodes import store_observation
+from lab_manager.nodes import NodeObservation, poll_node, store_observation
 
 pytestmark = pytest.mark.integration
 
@@ -126,3 +126,19 @@ async def test_reject_wrong_identity_stale_and_naive_sample():
     malformed["sample"]["network_bridges"][0]["ports"] = "nic0"
     with pytest.raises(NodeTransportError, match="INVALID_SAMPLE"):
         validate_observation(malformed, endpoint, now)
+
+
+async def test_poll_reconciles_empty_node_without_opening_admission(app, monkeypatch):
+    endpoint = SimpleNamespace(id=uuid.uuid4(), name="Test node", node="pve")
+    now = datetime.now(UTC)
+    payload, sampled = validate_observation(sample(endpoint, now), endpoint, now)
+    payload["sample"]["local_thin_sample_finished_at"] = now.isoformat()
+    monkeypatch.setattr("lab_manager.nodes.fetch", lambda _: (payload, sampled))
+    await poll_node(app.state.sessions, endpoint)
+    async with app.state.sessions() as db:
+        row = await db.get(NodeObservation, endpoint.id)
+        result = row.payload["sample"]
+        assert result["ownership_reconciled"] is True
+        assert result["storages"][0]["commitments_reconciled"] is True
+        assert result["storages"][0]["external_committed_bytes"] == 0
+        assert result["admission_ready"] is False
