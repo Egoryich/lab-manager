@@ -63,11 +63,15 @@ class Reader:
     def get(self, key):
         return self.data[key]
 
+    def guest_config(self, kind, vmid):
+        return self.data.get("guest_configs", {}).get((kind, vmid), {})
+
 
 def test_snapshot_preserves_external_guests_without_admission():
     result = collect(Reader())
     assert result["host"]["memory_total_bytes"] == 32 * 2**30
     assert result["guests"][0]["ownership"] == "UNVERIFIED"
+    assert result["guests"][0]["ownership_marker"] is None
     assert result["guests"][0]["reported_maxdisk_bytes"] == 10 * 2**30
     assert result["guests"][0]["reported_status"] == "stopped"
     assert result["storages"][0]["thin_metadata_percent"] is None
@@ -78,6 +82,19 @@ def test_snapshot_preserves_external_guests_without_admission():
     ]
     assert "NETWORK_AND_GATEWAY_NOT_VERIFIED" in result["limitations"]
     assert "token" not in json.dumps(result)
+
+
+def test_lab_marker_is_observed_but_not_trusted_without_vps_binding():
+    reader = Reader()
+    runtime = "e6456ac0-6b4b-47c3-a9fa-b92b006cd054"
+    marker = f"lab-manager:runtime={runtime};generation=1"
+    reader.data["guest_configs"] = {("LXC", 201): {"description": marker + "\n"}}
+    guest = collect(reader)["guests"][0]
+    assert guest["ownership_marker"] == marker
+    assert guest["ownership"] == "UNVERIFIED"
+    reader.data["guest_configs"][("LXC", 201)] = {"description": "lab-manager:runtime=bad"}
+    with pytest.raises(InventoryError, match="INVALID_LAB_OWNERSHIP_MARKER"):
+        collect(reader)
 
 
 def test_missing_capacity_is_unknown_and_duplicate_guest_is_rejected():
@@ -228,7 +245,7 @@ def test_verified_https_allows_only_fixed_gets_and_refuses_redirect(https_pve, m
     monkeypatch.setenv("HTTPS_PROXY", "http://invalid.example:9")
     reader = ProxmoxReader(config)
     assert collect(reader)["node"] == "pve"
-    assert len(state.requests) == 7
+    assert len(state.requests) == 8
     assert all(method == "GET" for method, _, _ in state.requests)
     assert all(
         auth == "PVEAPIToken=inventory@pve!reader=test-token-value-0123456789"

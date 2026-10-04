@@ -1,9 +1,28 @@
 """Explicit observations, never physical admission guarantees or ownership guesses."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
 from lab_node_agent.proxmox import InventoryError
+
+OWNER_MARKER = re.compile(
+    r"lab-manager:runtime=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+    r"[0-9a-f]{4}-[0-9a-f]{12});generation=([1-9][0-9]{0,6})\Z"
+)
+
+
+def ownership_marker(config):
+    description = object_value(config).get("description", "")
+    if not isinstance(description, str) or len(description) > 1024:
+        raise InventoryError("INVALID_GUEST_DESCRIPTION")
+    marker = description.rstrip("\r\n")
+    if not marker.startswith("lab-manager:"):
+        return None
+    match = OWNER_MARKER.fullmatch(marker)
+    if not match or uuid.UUID(match.group(1)).int == 0 or int(match.group(2)) > 1000000:
+        raise InventoryError("INVALID_LAB_OWNERSHIP_MARKER")
+    return marker
 
 
 def object_value(value):
@@ -86,6 +105,9 @@ def collect(reader, local_storage=None):
                 # E.g. a guest moved during non-atomic collection. Do not hide uncertainty.
                 raise InventoryError("INCONSISTENT_GUEST_LIST")
             ids.add(vmid)
+            # A marker is only a claim. VPS must match it to a durable runtime
+            # binding before it may consider ownership reconciled.
+            marker = ownership_marker(reader.guest_config(kind, vmid))
             reported = item.get("status")
             guests.append(
                 {
@@ -100,6 +122,7 @@ def collect(reader, local_storage=None):
                     # maxdisk is not a complete sum of all disks; never treat it as a ledger.
                     "reported_maxdisk_bytes": count(item.get("maxdisk"), optional=True),
                     "ownership": "UNVERIFIED",
+                    "ownership_marker": marker,
                 }
             )
     limitations = [
