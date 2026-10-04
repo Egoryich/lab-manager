@@ -211,3 +211,15 @@ SH
 ```
 
 Проверенный результат: digest совпал, пустой мост `lmbrkstvgq` был удалён (`DELETED`), updater завершился с `Result=success` и `ExecMainStatus=0`, итоговая строка `PASS`. Тест не включал мост, не назначал ему адрес и не подключал гостевые машины. Временный тестовый сегмент удалён.
+
+## Выпуск с адаптером Debian LXC
+
+04.10.2026 пользователь проверил автоматическое обновление Proxmox-агента после успешного Linux CI: `lab-node-update.service` завершился с `Result=success`, `ExecMainStatus=0`, `active_sha` совпал с проверенным выпуском, установленная версия пакета — `0.11.0`. В этой версии есть только типизированный адаптер операций с LXC; он ещё не подключён к сетевому API и не создаёт машины без отдельного вызова. Успешная проверка выпуска без привязки к адресу или секретам:
+
+```bash
+systemctl start lab-node-update.service
+systemctl show --no-pager lab-node-update.service -p Result -p ExecMainStatus
+python3 -c 'import json; print(json.load(open("/opt/lab-manager-node/update-state/state.json"))["active_sha"])'
+/opt/lab-manager-node/current/venv/bin/python -c \
+  'from importlib.metadata import version; print(version("lab-node-agent"))'
+```
