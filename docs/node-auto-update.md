@@ -112,3 +112,102 @@ echo 'PASS: запускатель восстановлен, updater обнов�
 ```
 
 Процедура историческая и привязана к указанному SHA. Для следующих обновлений исправленный updater сам проверяет запускатели после переноса venv; повторять `pip --force-reinstall` вручную не требуется.
+
+04.10.2026 подтверждено восстановление после неудачного обновления `d6efeec22b03b51dd16dbfe3fabc4f6900523f5e`. Из-за `UMask=0077` переустановка wheel в конечном каталоге оставляла часть пакета недоступной пользователю `lab-node-agent`. Updater вернул прежний выпуск `b44c95c47f6c49486a42f5ca279fe4646c5c72eb` и заблокировал неудачный SHA; работающий агент и таймер снимков сохранились. Исправленный выпуск `1a8099429c4cde710fa3088467f5cdb03a0c5ac7` прошёл CI. Он возвращает права чтения после переустановки wheel, в том числе при повторной попытке использовать уже подготовленный каталог, и проверяет импорт пакета от имени `lab-node-agent` до переключения текущего выпуска.
+
+На Proxmox под root успешно выполнена следующая процедура. В ней нет адресов инфраструктуры или секретов; тестовая подсеть используется только как запись для пустого выключенного моста. SHA выпуска и digest относятся только к этому случаю. Блокировка исправленного SHA снималась лишь в случае, если прежний updater успел ошибочно заблокировать именно его.
+
+```bash
+bash <<'SH'
+set -euo pipefail
+test "$(id -u)" -eq 0
+
+release='1a8099429c4cde710fa3088467f5cdb03a0c5ac7'
+previous='b44c95c47f6c49486a42f5ca279fe4646c5c72eb'
+digest='8e28f7e7de46751ad44d372ab0466a99f49befe8dc40266e236c2e8d0e53f68c'
+tmp=$(mktemp)
+spec=''
+allocation_id=''
+segment=''
+
+cleanup() {
+    rc=$?
+    if [[ -n "$allocation_id" && -x "$segment" ]]; then
+        "$segment" delete "$allocation_id" >/dev/null || true
+    fi
+    rm -f "$tmp"
+    if [[ -n "$spec" ]]; then rm -f "$spec"; fi
+    systemctl start lab-node-update.timer || rc=1
+    exit "$rc"
+}
+trap cleanup EXIT
+
+systemctl stop lab-node-update.timer
+if systemctl is-active --quiet lab-node-update.service; then
+    echo 'Updater ещё выполняется'
+    exit 1
+fi
+test "$(readlink -f /opt/lab-manager-node/current)" = \
+    "/opt/lab-manager-node/releases/$previous"
+test ! -e /opt/lab-manager-node/update-state/pending.json
+
+curl --fail --silent --show-error --location --retry 3 \
+    --proto '=https' --proto-redir '=https' \
+    -o "$tmp" \
+    "https://github.com/Egoryich/lab-manager/releases/download/node-agent-$release/update-node.py"
+printf '%s  %s\n' "$digest" "$tmp" | sha256sum --check --strict
+install -o root -g root -m 0644 "$tmp" \
+    /usr/local/lib/lab-manager-node/update-node.py
+
+python3 - "$previous" "$release" <<'PY'
+import json
+import os
+import pathlib
+import sys
+import tempfile
+
+root = pathlib.Path('/opt/lab-manager-node/update-state')
+old, candidate = sys.argv[1:]
+state = json.loads((root / 'state.json').read_text())
+assert state['active_sha'] == old
+assert state.get('blocked_sha') in {
+    None,
+    'd6efeec22b03b51dd16dbfe3fabc4f6900523f5e',
+    '4ba893f4f25984ec50d48ec99157b3eb6c4d2a46',
+    candidate,
+}
+assert not (root / 'pending.json').exists()
+if state.get('blocked_sha') == candidate:
+    del state['blocked_sha']
+    fd, name = tempfile.mkstemp(prefix='state-retry.', dir=root)
+    with os.fdopen(fd, 'w') as stream:
+        json.dump(state, stream, sort_keys=True)
+        stream.write('\n')
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(name, root / 'state.json')
+    print('Блокировка исправленного выпуска снята')
+PY
+
+systemctl start lab-node-update.service
+test "$(python3 -c 'import json; print(json.load(open("/opt/lab-manager-node/update-state/state.json"))["active_sha"])')" = "$release"
+test ! -e /opt/lab-manager-node/update-state/pending.json
+systemctl is-active --quiet lab-node-agent.service lab-node-storage-snapshot.timer
+
+segment=/opt/lab-manager-node/current/venv/bin/lab-node-segment
+allocation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+spec=$(mktemp)
+printf '{"allocation_id":"%s","mode":"ISOLATED","cidr":"10.70.255.252/30"}\n' \
+    "$allocation_id" > "$spec"
+bridge=$("$segment" create "$spec")
+ip -j -d link show dev "$bridge" |
+    python3 -c 'import json,sys; x=json.load(sys.stdin)[0]; assert x["linkinfo"]["info_kind"]=="bridge" and "UP" not in x["flags"]; print("Пустой мост:", x["ifname"])'
+"$segment" delete "$allocation_id"
+allocation_id=''
+test ! -e "/sys/class/net/$bridge"
+systemctl show --no-pager lab-node-update.service -p Result -p ExecMainStatus
+echo 'PASS: новый агент работает; тестовый мост создан и удалён'
+SH
+```
+
+Проверенный результат: digest совпал, пустой мост `lmbrkstvgq` был удалён (`DELETED`), updater завершился с `Result=success` и `ExecMainStatus=0`, итоговая строка `PASS`. Тест не включал мост, не назначал ему адрес и не подключал гостевые машины. Временный тестовый сегмент удалён.
