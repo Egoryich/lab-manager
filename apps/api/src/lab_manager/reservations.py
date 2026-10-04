@@ -1,4 +1,4 @@
-"""Transactional admission primitives; no public booking route until inventory is trusted."""
+"""Transactional lesson admission and cancellation."""
 
 import uuid
 from datetime import timedelta
@@ -130,18 +130,24 @@ async def reserve_lesson(
     request_id: uuid.UUID,
     starts_at,
     ends_at,
-    demand: ResourceDemand,
+    demand: ResourceDemand | None,
+    preflight=None,
+    on_reserved=None,
 ):
     """Serialize admission for one node and commit compute plus disk together.
 
-    The future API must revalidate policy, roster, environment version and
-    ownership before calling this primitive. The agent currently fails closed.
+    A caller-provided preflight revalidates policy, roster and environment
+    version while the node ledger is locked. The agent currently fails closed.
     """
     if starts_at.tzinfo is None or ends_at.tzinfo is None or starts_at >= ends_at:
         raise AdmissionRejected("INVALID_WINDOW")
     if ends_at - starts_at > timedelta(hours=24):
         raise AdmissionRejected("WINDOW_TOO_LONG")
-    if demand.memory_mib <= 0 or demand.cpu_millicredits <= 0 or demand.disk_bytes <= 0:
+    if demand is None and preflight is None:
+        raise AdmissionRejected("INVALID_DEMAND")
+    if demand is not None and (
+        demand.memory_mib <= 0 or demand.cpu_millicredits <= 0 or demand.disk_bytes <= 0
+    ):
         raise AdmissionRejected("INVALID_DEMAND")
     async with sessions() as db, db.begin():
         await db.execute(text("SET LOCAL statement_timeout = '10s'"))
@@ -154,11 +160,6 @@ async def reserve_lesson(
         if ledger is None:
             raise AdmissionRejected("NODE_POLICY_MISSING")
         now = await db.scalar(select(func.clock_timestamp()))
-        environment = await db.scalar(
-            select(Environment).where(Environment.id == environment_id).with_for_update()
-        )
-        if environment is None or environment.owner_teacher_id != teacher_id:
-            raise AdmissionRejected("ENVIRONMENT_NOT_OWNED")
         existing = await db.scalar(
             select(LessonReservation).where(
                 LessonReservation.teacher_id == teacher_id,
@@ -171,13 +172,35 @@ async def reserve_lesson(
                 and existing.environment_id == environment_id
                 and existing.starts_at == starts_at
                 and existing.ends_at == ends_at
-                and existing.memory_mib == demand.memory_mib
-                and existing.cpu_millicredits == demand.cpu_millicredits
-                and existing.disk_bytes == demand.disk_bytes
-                and existing.hibernation_bytes == demand.hibernation_bytes
+                and (
+                    demand is None
+                    or (
+                        existing.memory_mib == demand.memory_mib
+                        and existing.cpu_millicredits == demand.cpu_millicredits
+                        and existing.disk_bytes == demand.disk_bytes
+                        and existing.hibernation_bytes == demand.hibernation_bytes
+                    )
+                )
             ):
                 return existing
             raise AdmissionRejected("REQUEST_CONFLICT")
+        if preflight is not None:
+            checked_demand = await preflight(db)
+            if demand is not None and checked_demand != demand:
+                raise AdmissionRejected("DEMAND_CHANGED")
+            demand = checked_demand
+        if (
+            not isinstance(demand, ResourceDemand)
+            or demand.memory_mib <= 0
+            or demand.cpu_millicredits <= 0
+            or demand.disk_bytes <= 0
+        ):
+            raise AdmissionRejected("INVALID_DEMAND")
+        environment = await db.scalar(
+            select(Environment).where(Environment.id == environment_id).with_for_update()
+        )
+        if environment is None or environment.owner_teacher_id != teacher_id:
+            raise AdmissionRejected("ENVIRONMENT_NOT_OWNED")
         if starts_at < now - timedelta(minutes=5) or ends_at <= now:
             raise AdmissionRejected("WINDOW_PAST")
         if starts_at > now + timedelta(days=90):
@@ -281,10 +304,14 @@ async def reserve_lesson(
         )
         db.add(reservation)
         await db.flush()
+        if on_reserved is not None:
+            await on_reserved(db, reservation)
         return reservation
 
 
-async def cancel_future_lesson(sessions, *, reservation_id: uuid.UUID, teacher_id: uuid.UUID):
+async def cancel_future_lesson(
+    sessions, *, reservation_id: uuid.UUID, teacher_id: uuid.UUID, on_cancel=None
+):
     """Free future compute and only an unmaterialized, otherwise unused disk hold."""
     async with sessions() as db, db.begin():
         await db.execute(text("SET LOCAL statement_timeout = '10s'"))
@@ -320,4 +347,6 @@ async def cancel_future_lesson(sessions, *, reservation_id: uuid.UUID, teacher_i
         allocation = await db.get(EnvironmentDiskAllocation, reservation.environment_id)
         if other is None and allocation is not None and allocation.state == "RESERVED":
             await db.delete(allocation)
+        if on_cancel is not None:
+            await on_cancel(db, reservation)
         return reservation

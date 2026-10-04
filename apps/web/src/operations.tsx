@@ -46,6 +46,15 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
   const cache = useQueryClient();
   const key = ['operations', environment.id];
   const [requestId, setRequestId] = useState(crypto.randomUUID());
+  const reservations = useQuery({
+    queryKey: ['reservations', environment.id],
+    queryFn: async () =>
+      unwrap(
+        await api.GET('/api/environments/{environment_id}/reservations', {
+          params: { path: { environment_id: environment.id } },
+        }),
+      ),
+  });
   const operations = useQuery({
     queryKey: key,
     queryFn: async () =>
@@ -88,6 +97,38 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
         }),
       );
     },
+  });
+  const book = useMutation({
+    mutationFn: async (nodeId: string) => {
+      if (!preview.data) throw new Error('Сначала проверьте доступность сервера.');
+      return unwrap(
+        await api.POST('/api/environments/{environment_id}/reservations', {
+          params: { path: { environment_id: environment.id } },
+          body: {
+            request_id: requestId,
+            node_id: nodeId,
+            expected_environment_version: environment.version,
+            expected_group_version: preview.data.group_version,
+            starts_at: preview.data.starts_at,
+            ends_at: preview.data.ends_at,
+          },
+        }),
+      );
+    },
+    onSuccess: () => {
+      setRequestId(crypto.randomUUID());
+      preview.reset();
+      cache.invalidateQueries({ queryKey: ['reservations', environment.id] });
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: async (reservationId: string) =>
+      unwrap(
+        await api.POST('/api/reservations/{reservation_id}/cancel', {
+          params: { path: { reservation_id: reservationId } },
+        }),
+      ),
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['reservations', environment.id] }),
   });
   const operation = operations.data?.[0];
   const pending = operation && !terminal.has(operation.state);
@@ -135,6 +176,7 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
         </div>
       )}
       <form
+        onChange={() => preview.reset()}
         onSubmit={(event) => {
           event.preventDefault();
           preview.mutate(new FormData(event.currentTarget));
@@ -186,6 +228,15 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
                   ))}
                 </ul>
               )}
+              {node.available && (
+                <button
+                  type="button"
+                  disabled={book.isPending}
+                  onClick={() => book.mutate(node.node_id)}
+                >
+                  Забронировать занятие
+                </button>
+              )}
             </div>
           ))}
           <small>
@@ -193,6 +244,31 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
           </small>
         </div>
       )}
+      {book.error && <p className="error" role="alert">{book.error.message}</p>}
+      {reservations.data?.length ? (
+        <div className="resource-estimate">
+          <h3>Занятия и брони</h3>
+          {reservations.data.map((reservation) => (
+            <div key={reservation.id}>
+              <p>
+                {new Date(reservation.starts_at).toLocaleString('ru-RU')} —{' '}
+                {new Date(reservation.ends_at).toLocaleString('ru-RU')} ·{' '}
+                {reservation.state === 'RESERVED' ? 'забронировано' : 'идёт занятие'}
+              </p>
+              {reservation.state === 'RESERVED' && (
+                <button
+                  type="button"
+                  disabled={cancel.isPending}
+                  onClick={() => cancel.mutate(reservation.id)}
+                >
+                  Отменить бронь
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {cancel.error && <p className="error" role="alert">{cancel.error.message}</p>}
     </div>
   );
 }

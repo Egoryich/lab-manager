@@ -12,7 +12,16 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from lab_manager import auth, catalog, groups, lesson_preview, node_policies, nodes, operations
+from lab_manager import (
+    auth,
+    catalog,
+    groups,
+    lesson_booking,
+    lesson_preview,
+    node_policies,
+    nodes,
+    operations,
+)
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.schema import CURRENT_SCHEMA_REVISION
@@ -141,4 +150,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(nodes.router, prefix="/api", responses=errors)
     app.include_router(node_policies.router, prefix="/api", responses=errors)
     app.include_router(lesson_preview.router, prefix="/api", responses=errors)
+    app.include_router(lesson_booking.router, prefix="/api", responses=errors)
     return app

@@ -5,12 +5,16 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from lab_manager.capacity import GIB, MIB, ResourceDemand
 from lab_manager.catalog_models import (
+    DemoProfileGrant,
     Environment,
     PermissionPolicyRevision,
+    PolicyLimit,
+    PolicyPermission,
     ProfileVersion,
+    TeacherPolicyAssignment,
     TemplateVersion,
 )
-from lab_manager.models import Group
+from lab_manager.models import Group, GroupMember
 from lab_manager.nodes import NodeObservation
 from lab_manager.reservation_models import (
     EnvironmentDiskAllocation,
@@ -206,6 +210,88 @@ async def test_incomplete_agent_snapshot_never_creates_a_reservation(app, seed):
     assert "NODE_NOT_ADMISSION_READY" in error.value.reasons
     async with app.state.sessions() as db:
         assert await db.scalar(select(func.count()).select_from(LessonReservation)) == 0
+
+
+async def test_teacher_booking_rechecks_roster_and_keeps_idempotency(
+    app, seed, session, client_factory
+):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    stranger = await seed("TEACHER")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    async with app.state.sessions() as db, db.begin():
+        environment = await db.get(Environment, environment_id)
+        group = await db.get(Group, environment.group_id)
+        db.add(GroupMember(group_id=group.id, student_id=student.id))
+        group.version += 1
+        db.add_all(
+            (
+                TeacherPolicyAssignment(
+                    teacher_id=teacher.id, revision_id=environment.permission_revision_id
+                ),
+                DemoProfileGrant(
+                    revision_id=environment.permission_revision_id,
+                    profile_version_id=environment.profile_version_id,
+                ),
+                PolicyPermission(
+                    revision_id=environment.permission_revision_id,
+                    key="can_create_lxc",
+                    allowed=True,
+                ),
+                PolicyPermission(
+                    revision_id=environment.permission_revision_id,
+                    key="can_use_linux_profiles",
+                    allowed=True,
+                ),
+            )
+        )
+        for key, value in {
+            "max_lxc_per_environment": 10,
+            "max_vm_per_environment": 0,
+            "max_total_ram_mb": 4096,
+            "max_cpu_credits": 4,
+            "max_disk_gb": 100,
+            "max_active_environments": 1,
+        }.items():
+            db.add(
+                PolicyLimit(revision_id=environment.permission_revision_id, key=key, value=value)
+            )
+        group_id, group_version = group.id, group.version
+    starts_at = datetime.now(UTC) + timedelta(hours=1)
+    body = {
+        "request_id": str(uuid.uuid4()),
+        "node_id": str(node_id),
+        "expected_environment_version": 1,
+        "expected_group_version": group_version,
+        "starts_at": starts_at.isoformat(),
+        "ends_at": (starts_at + timedelta(hours=1)).isoformat(),
+    }
+    path = f"/api/environments/{environment_id}/reservations"
+    async with client_factory() as owner, client_factory() as other:
+        await session(owner, teacher)
+        await session(other, stranger)
+        assert (await other.post(path, json=body)).status_code == 404
+        stale = await owner.post(path, json=body | {"expected_group_version": 1})
+        assert stale.status_code == 409 and stale.json()["code"] == "VERSION_CONFLICT"
+        booked = await owner.post(path, json=body)
+        assert booked.status_code == 201, booked.text
+        assert booked.json()["memory_mib"] == 1024
+        async with app.state.sessions() as db, db.begin():
+            group = await db.get(Group, group_id)
+            group.version += 1
+        repeat = await owner.post(path, json=body)
+        assert repeat.status_code == 201 and repeat.json()["id"] == booked.json()["id"]
+        conflict = await owner.post(
+            path,
+            json=body | {"ends_at": (starts_at + timedelta(hours=2)).isoformat()},
+        )
+        assert conflict.status_code == 409 and conflict.json()["code"] == "REQUEST_CONFLICT"
+        cancelled = await owner.post(f"/api/reservations/{booked.json()['id']}/cancel")
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["state"] == "CANCELLED"
+    async with app.state.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(EnvironmentDiskAllocation)) == 0
 
 
 async def test_lesson_preview_is_scoped_and_never_books(app, seed, session, client_factory):
