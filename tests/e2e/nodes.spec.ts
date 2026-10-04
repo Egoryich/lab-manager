@@ -54,7 +54,7 @@ test('administrator sees empty inventory and clearly marked stale observations',
   );
   await page.reload();
   await expect(page.getByText('Данные устарели', { exact: true })).toBeVisible();
-  await expect(page.getByText('student-lvm')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'student-lvm' })).toBeVisible();
   await expect(page.getByText('0.38%')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Сетевые мосты' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'vmbr1' })).toBeVisible();
