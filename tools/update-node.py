@@ -179,7 +179,7 @@ def validate_staged(target, assets, wheel):
 
 def verify_entrypoints(target, wheel):
     """Entry point shebangs must refer to the final release path, not .incoming."""
-    scripts = ("lab-node-agent", "lab-node-policy")
+    scripts = ("lab-node-agent", "lab-node-policy", "lab-node-segment")
     try:
         for name in scripts:
             run(str(target / "venv/bin" / name), "--help")
