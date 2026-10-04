@@ -178,14 +178,30 @@ class ProxmoxLxcProvider:
         if existing is not None:
             if str(existing.get("description", "")).rstrip("\r\n") != spec.marker:
                 raise LxcOperationError("VMID_ALREADY_OWNED")
+            net = str(existing.get("net0", "")).split(",")
+            rootfs = str(existing.get("rootfs", ""))
             if (
                 str(existing.get("unprivileged")) != "1"
                 or str(existing.get("onboot", "0")) != "0"
+                or str(existing.get("ostype")) != "debian"
+                or str(existing.get("hostname")) != spec.hostname
                 or str(existing.get("memory")) != str(spec.memory_mib)
                 or str(existing.get("cores")) != str(spec.cores)
-                or not re.search(
-                    rf"(?:^|,)bridge={re.escape(spec.bridge)}(?:,|$)",
-                    str(existing.get("net0", "")),
+                or str(existing.get("swap", "0")) != "0"
+                or not re.fullmatch(
+                    rf"{re.escape(spec.storage)}:vm-{spec.vmid}-disk-[0-9]+,size={spec.disk_gib}G",
+                    rootfs,
+                )
+                or not all(
+                    value in net
+                    for value in (
+                        "name=eth0",
+                        f"bridge={spec.bridge}",
+                        "firewall=1",
+                        "ip=manual",
+                        "ip6=manual",
+                        "link_down=1",
+                    )
                 )
             ):
                 raise LxcOperationError("GUEST_CONFIGURATION_DRIFT")
@@ -235,3 +251,11 @@ class ProxmoxLxcProvider:
         if not isinstance(result, dict) or result.get("status") not in ("running", "stopped"):
             raise LxcOperationError("PROXMOX_TASK_STATUS_INVALID")
         return result
+
+    def current_status(self, vmid: int):
+        result = self._request(
+            "GET", f"/nodes/{self.config.node}/lxc/{self._vmid(vmid)}/status/current"
+        )
+        if not isinstance(result, dict) or result.get("status") not in ("running", "stopped"):
+            raise LxcOperationError("PROXMOX_GUEST_STATUS_INVALID")
+        return result["status"]

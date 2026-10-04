@@ -96,9 +96,16 @@ def test_retry_never_creates_second_guest_or_adopts_foreign_vmid(tmp_path, monke
         "description": guest.marker,
         "unprivileged": 1,
         "onboot": 0,
+        "ostype": "debian",
+        "hostname": guest.hostname,
         "memory": guest.memory_mib,
         "cores": guest.cores,
-        "net0": f"name=eth0,bridge={guest.bridge},firewall=1",
+        "swap": 0,
+        "rootfs": f"student-lvm:vm-{guest.vmid}-disk-0,size={guest.disk_gib}G",
+        "net0": (
+            f"name=eth0,bridge={guest.bridge},firewall=1,hwaddr=BC:24:11:00:00:00,"
+            "ip=manual,ip6=manual,link_down=1,type=veth"
+        ),
     }
     subject = provider(tmp_path, monkeypatch, [existing])
     assert subject.create(guest) is None
@@ -120,6 +127,16 @@ def test_retry_never_creates_second_guest_or_adopts_foreign_vmid(tmp_path, monke
     subject = provider(tmp_path, monkeypatch, [{**existing, "net0": "bridge=vmbr0"}])
     with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
         subject.create(guest)
+
+    for change in (
+        {"rootfs": "local-lvm:vm-200-disk-0,size=10G"},
+        {"rootfs": "student-lvm:vm-200-disk-0,size=20G"},
+        {"net0": existing["net0"].replace("link_down=1", "link_down=0")},
+        {"net0": existing["net0"].replace("firewall=1", "firewall=0")},
+    ):
+        subject = provider(tmp_path, monkeypatch, [{**existing, **change}])
+        with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
+            subject.create(guest)
 
 
 def test_start_and_shutdown_require_owned_unprivileged_guest(tmp_path, monkeypatch):
@@ -157,6 +174,12 @@ def test_task_status_reads_only_a_valid_task_id(tmp_path, monkeypatch):
     with pytest.raises(LxcOperationError, match="PROXMOX_TASK_INVALID"):
         subject.task_status("../tasks/other")
     assert len(subject.opener.requests) == 1
+
+
+def test_current_status_uses_bounded_lxc_path(tmp_path, monkeypatch):
+    subject = provider(tmp_path, monkeypatch, [{"status": "running"}])
+    assert subject.current_status(200) == "running"
+    assert subject.opener.requests[0].full_url.endswith("/lxc/200/status/current")
 
 
 @pytest.mark.parametrize(

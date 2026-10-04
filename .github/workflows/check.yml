@@ -61,7 +61,7 @@ jobs:
           else
             gh release create "$tag" release/* --target "$GITHUB_SHA" --prerelease \
               --title "Node agent ${GITHUB_SHA}" \
-              --notes "Read-only inventory, verified updater and root-only empty bridge manager. No guest attachment or traffic activation. Deployment: docs/node-auto-update.md at this commit."
+              --notes "Read-only inventory plus dormant, typed LXC command endpoint with durable receipts. Commands require separate token and manual activation; guest traffic remains closed. Deployment: docs/node-commands.md at this commit."
           fi
   identity-groups:
     runs-on: ubuntu-latest
