@@ -2,7 +2,10 @@ import importlib.util
 import io
 import ipaddress
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+import pytest
 
 spec = importlib.util.spec_from_file_location(
     "vps_network_check",
@@ -50,3 +53,20 @@ def test_lesson_api_check_uses_mounted_openapi_path(monkeypatch):
 
     monkeypatch.setattr(check, "OPENER", Opener())
     assert "lesson preview" in check.check_api_routes()
+
+
+def test_reconciliation_check_requires_fresh_matched_disk_inventory(monkeypatch):
+    sample = {
+        "ownership": True,
+        "storage": {"commitments_reconciled": True},
+        "local_sample": datetime.now(UTC).isoformat(),
+    }
+    monkeypatch.setattr(check, "compose", lambda *args: json.dumps(sample))
+    assert "disk commitments reconciled" in check.check_reconciliation("student-lvm")
+    sample["local_sample"] = (datetime.now(UTC) - timedelta(minutes=3)).isoformat()
+    with pytest.raises(RuntimeError, match="stale"):
+        check.check_reconciliation("student-lvm")
+    sample["local_sample"] = datetime.now(UTC).isoformat()
+    sample["storage"]["commitments_reconciled"] = False
+    with pytest.raises(RuntimeError, match="unresolved"):
+        check.check_reconciliation("student-lvm")

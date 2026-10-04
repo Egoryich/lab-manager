@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -222,6 +223,34 @@ def check_node(management_bridge, guest_bridge):
     return f"mTLS inventory fresh; {guest_bridge} has no physical port; admission remains closed"
 
 
+def check_reconciliation(storage_name):
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,63}", storage_name):
+        raise RuntimeError("invalid storage name")
+    query = (
+        "SELECT jsonb_build_object("
+        "'ownership',payload->'sample'->'ownership_reconciled',"
+        "'storage',(SELECT value FROM jsonb_array_elements(payload->'sample'->'storages') "
+        f"WHERE value->>'name'='{storage_name}'),"
+        "'local_sample',payload->'sample'->>'local_thin_sample_finished_at') "
+        "FROM node_observations WHERE error_code IS NULL "
+        "ORDER BY last_contact_at DESC LIMIT 1"
+    )
+    raw = compose("exec", "-T", "postgres", "psql", "-U", "lab", "-d", "lab", "-Atc", query)
+    if not raw:
+        raise RuntimeError("no successful node observation")
+    evidence = json.loads(raw)
+    storage = evidence.get("storage")
+    if evidence.get("ownership") is not True or not isinstance(storage, dict):
+        raise RuntimeError("guest ownership or storage observation is unresolved")
+    if storage.get("commitments_reconciled") is not True:
+        raise RuntimeError("disk commitments are unresolved")
+    observed = datetime.fromisoformat(evidence["local_sample"])
+    age = (datetime.now(UTC) - observed).total_seconds()
+    if observed.tzinfo is None or not -10 <= age <= 120:
+        raise RuntimeError("local storage snapshot is stale")
+    return f"guest ownership and {storage_name} disk commitments reconciled"
+
+
 def check_space():
     free = shutil.disk_usage(ROOT).free
     if free < 1536 * 1024**2:
@@ -234,6 +263,7 @@ def main():
     parser.add_argument("--pool", default="10.70.0.0/16")
     parser.add_argument("--management-bridge", default="vmbr0")
     parser.add_argument("--guest-bridge", default="vmbr1")
+    parser.add_argument("--storage", default="student-lvm")
     args = parser.parse_args()
     if os.name != "posix" or os.geteuid() != 0:
         parser.error("run as root on the VPS")
@@ -248,6 +278,7 @@ def main():
         ("HTTPS", check_readiness),
         ("Lesson API", check_api_routes),
         ("Proxmox inventory", lambda: check_node(args.management_bridge, args.guest_bridge)),
+        ("Resource reconciliation", lambda: check_reconciliation(args.storage)),
         ("Disk", check_space),
     )
     failed = 0
