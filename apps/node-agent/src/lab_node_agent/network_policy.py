@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-_BRIDGE_NAME = re.compile(r"lmbr[a-z0-9]{1,11}\Z")
+_BRIDGE_NAME = re.compile(r"lmbr[a-z0-9]{1,6}\Z")
 
 
 class SegmentMode(StrEnum):
