@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from lab_manager.capacity import GIB, MIB, ResourceDemand
@@ -16,6 +17,9 @@ from lab_manager.catalog_models import (
 )
 from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
 from lab_manager.models import Group, GroupMember, User
+from lab_manager.network_models import NetworkSegmentAllocation, NodeNetworkPool
+from lab_manager.node_segment_worker import process as apply_segment
+from lab_manager.node_segments import NodeSegmentError
 from lab_manager.nodes import NodeObservation
 from lab_manager.reservation_models import (
     EnvironmentDiskAllocation,
@@ -39,7 +43,7 @@ from sqlalchemy.orm.attributes import flag_modified
 pytestmark = pytest.mark.integration
 
 
-async def setup(app, teacher_ids):
+async def setup(app, teacher_ids, *, network_mode="ISOLATED"):
     node_id = uuid.uuid4()
     payload = {
         "sample": {
@@ -94,6 +98,7 @@ async def setup(app, teacher_ids):
         )
         await db.flush()
         db.add(NodeResourceLedger(node_id=node_id))
+        db.add(NodeNetworkPool(node_id=node_id, cidr="10.70.0.0/24"))
         template = TemplateVersion(
             name="Linux",
             version_label="v1",
@@ -116,7 +121,7 @@ async def setup(app, teacher_ids):
             max_vcpu=1,
             min_disk_gib=10,
             max_disk_gib=10,
-            network_mode="ISOLATED",
+            network_mode=network_mode,
             internet_enabled=False,
             created_by=teacher_ids[0],
         )
@@ -174,6 +179,11 @@ async def ready_roster(app, teacher_id, student_id, environment_id):
                     key="can_use_linux_profiles",
                     allowed=True,
                 ),
+                PolicyPermission(
+                    revision_id=environment.permission_revision_id,
+                    key="can_enable_group_network",
+                    allowed=True,
+                ),
             )
         )
         for key, value in {
@@ -218,6 +228,17 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
     assert attempts[0].id == attempts[1].id
     run = attempts[0]
     assert run.state == "PREPARING" and run.generation == 1
+    async with app.state.sessions() as db:
+        segments = list(
+            await db.scalars(
+                select(NetworkSegmentAllocation).where(
+                    NetworkSegmentAllocation.environment_id == environment_id
+                )
+            )
+        )
+        assert len(segments) == 2
+        assert {segment.mode for segment in segments} == {"ISOLATED"}
+        assert {segment.cidr for segment in segments} == {"10.70.0.0/30", "10.70.0.4/30"}
     repeated = await prepare_reserved_run(
         app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
     )
@@ -260,6 +281,15 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
         app.state.sessions, reservation_id=next_reservation.id, teacher_id=teacher.id
     )
     assert second.id != run.id and second.generation == 2
+    async with app.state.sessions() as db:
+        assert (
+            await db.scalar(
+                select(func.count()).select_from(NetworkSegmentAllocation).where(
+                    NetworkSegmentAllocation.environment_id == environment_id
+                )
+            )
+            == 2
+        )
     reused_bindings = await bind_prepared_runtimes(app.state.sessions, run_id=second.id)
     assert {item.vmid for item in reused_bindings} == {900000, 900001}
     async with app.state.sessions() as db:
@@ -268,6 +298,95 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
         )
         assert {item.id for item in first} == {item.id for item in later}
         assert await db.scalar(select(func.count()).select_from(RunRuntime)) == 4
+
+
+async def test_group_lan_claim_is_shared_by_student_and_demo(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id], network_mode="GROUP_LAN")
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    await prepare_reserved_run(
+        app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+    )
+    async with app.state.sessions() as db:
+        segments = list(
+            await db.scalars(
+                select(NetworkSegmentAllocation).where(
+                    NetworkSegmentAllocation.environment_id == environment_id
+                )
+            )
+        )
+        assert len(segments) == 1
+        assert segments[0].mode == "GROUP_LAN"
+        assert segments[0].requested_hosts >= 3
+
+
+async def test_reserved_bridges_apply_once_and_reconcile_after_lost_response(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    await prepare_reserved_run(
+        app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+    )
+    remote = {}
+    lost_response = True
+
+    class Client:
+        def __init__(self, endpoint):
+            assert endpoint.id == node_id
+
+        def status(self, allocation_id):
+            return remote.get(allocation_id)
+
+        def create(self, allocation_id, mode, cidr):
+            nonlocal lost_response
+            value = {"mode": mode, "cidr": cidr}
+            remote[allocation_id] = value
+            if lost_response:
+                lost_response = False
+                raise NodeSegmentError("NODE_SEGMENT_TRANSPORT_FAILED")
+            return value
+
+    endpoints = [SimpleNamespace(id=node_id)]
+    assert not await apply_segment(app.state.sessions, endpoints, client_factory=Client)
+    assert await apply_segment(app.state.sessions, endpoints, client_factory=Client)
+    assert await apply_segment(app.state.sessions, endpoints, client_factory=Client)
+    assert not await apply_segment(app.state.sessions, endpoints, client_factory=Client)
+    assert len(remote) == 2
+    async with app.state.sessions() as db:
+        states = list(
+            await db.scalars(
+                select(NetworkSegmentAllocation.state).where(
+                    NetworkSegmentAllocation.environment_id == environment_id
+                )
+            )
+        )
+        assert states == ["APPLIED", "APPLIED"]
 
 
 async def test_changed_roster_cannot_start_on_old_disk_reservation(app, seed):

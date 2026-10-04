@@ -26,6 +26,7 @@ from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.models import User, UserRole
 from lab_manager.node_command_worker import process as process_node_command
+from lab_manager.node_segment_worker import process as process_node_segment
 from lab_manager.node_transport import load_endpoints
 from lab_manager.nodes import poll_forever
 from lab_manager.operation_models import Operation, WorkerHeartbeat
@@ -232,7 +233,9 @@ async def tick(sessions, worker_id, endpoints=()):
     if claim:
         await execute_claim(sessions, claim)
         return True
-    return await process_node_command(sessions, worker_id, endpoints)
+    if await process_node_command(sessions, worker_id, endpoints):
+        return True
+    return await process_node_segment(sessions, endpoints)
 
 
 async def run(once=False):

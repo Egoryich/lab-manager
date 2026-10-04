@@ -14,7 +14,9 @@ from lab_manager.catalog import configuration, estimate
 from lab_manager.catalog_models import Environment
 from lab_manager.dependencies import Problem
 from lab_manager.lesson_booking import environment_body
+from lab_manager.lesson_network import claim_run_networks
 from lab_manager.models import GroupMember, User, UserRole
+from lab_manager.network_allocations import NetworkAllocationRejected
 from lab_manager.nodes import NodeObservation
 from lab_manager.reservation_models import (
     EnvironmentDiskAllocation,
@@ -268,6 +270,16 @@ async def prepare_reserved_run(sessions, *, reservation_id: uuid.UUID, teacher_i
             raise RunPreparationRejected("RUNTIME_CONFIGURATION_CHANGED")
         roster.append(demo)
         await db.flush()
+        try:
+            await claim_run_networks(
+                db,
+                environment_id=environment.id,
+                node_id=reservation.node_id,
+                runtimes=roster,
+                profiles={student_profile.id: student_profile, demo_profile.id: demo_profile},
+            )
+        except NetworkAllocationRejected as error:
+            raise RunPreparationRejected(error.reason) from error
         db.add_all(
             RunRuntime(
                 run_id=run.id, runtime_id=runtime.id, environment_id=environment.id, state="PLANNED"
