@@ -197,8 +197,20 @@ def verify_entrypoints(target, wheel):
             "--force-reinstall",
             str(target / wheel),
         )
+        # The updater runs with UMask=0077. pip recreates package files during
+        # relocation, so make them readable to the unprivileged service again.
+        run("chmod", "-R", "a+rX", str(target / "venv"))
         for name in scripts:
             run(str(target / "venv/bin" / name), "--help")
+    run(
+        "runuser",
+        "-u",
+        "lab-node-agent",
+        "--",
+        str(target / "venv/bin/python"),
+        "-c",
+        "from lab_node_agent.host_storage import read_snapshot",
+    )
 
 
 def download_release(sha, assets, wheel):
@@ -304,6 +316,10 @@ def deploy(state, sha, assets, wheel):
         switch(sha)
         health()
     except Exception as original:
+        if isinstance(original, UpdateError):
+            print(f"Candidate activation failed: {original}", file=sys.stderr)
+        else:
+            print(f"Candidate activation failed: {type(original).__name__}", file=sys.stderr)
         try:
             run("systemctl", "stop", "lab-node-storage-snapshot.timer")
             switch(active)

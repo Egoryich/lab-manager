@@ -96,7 +96,12 @@ def test_relocated_venv_entrypoints_are_reinstalled_from_verified_wheel(tmp_path
 
     monkeypatch.setattr(updater, "run", run)
     updater.verify_entrypoints(tmp_path, "agent.whl")
-    assert any("--force-reinstall" in call for call in calls)
+    reinstall = next(i for i, call in enumerate(calls) if "--force-reinstall" in call)
+    chmod = next(i for i, call in enumerate(calls) if call[:3] == ("chmod", "-R", "a+rX"))
+    nonroot = next(
+        i for i, call in enumerate(calls) if call[:3] == ("runuser", "-u", "lab-node-agent")
+    )
+    assert reinstall < chmod < nonroot
     assert any(call[0].endswith("lab-node-policy") and "--help" in call for call in calls)
     assert any(call[0].endswith("lab-node-segment") and "--help" in call for call in calls)
 
@@ -105,8 +110,9 @@ def test_valid_entrypoints_need_no_reinstall(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(updater, "run", lambda *args, **kwargs: calls.append(args) or "")
     updater.verify_entrypoints(tmp_path, "agent.whl")
-    assert len(calls) == 3
+    assert len(calls) == 4
     assert all("--force-reinstall" not in call for call in calls)
+    assert calls[-1][:3] == ("runuser", "-u", "lab-node-agent")
 
 
 def test_failed_activation_restores_previous_release_and_blocks_candidate(tmp_path, monkeypatch):
