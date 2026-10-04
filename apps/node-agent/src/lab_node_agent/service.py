@@ -21,13 +21,15 @@ from lab_node_agent.host_storage import StorageProbeError, read_snapshot
 from lab_node_agent.inventory import collect
 from lab_node_agent.lxc_provider import ProxmoxLxcProvider
 from lab_node_agent.proxmox import ProxmoxConfig, ProxmoxReader
+from lab_node_agent.segment_client import SegmentClient
+from lab_node_agent.segments import SegmentError
 
 logger = logging.getLogger("lab_node_agent")
 MAX_BODY = 4 * 1024 * 1024
 
 
 class SnapshotService:
-    def __init__(self, reader, node_id, client_fingerprint, dispatcher=None):
+    def __init__(self, reader, node_id, client_fingerprint, dispatcher=None, segment_client=None):
         self.reader = reader
         self.node_id = str(uuid.UUID(node_id))
         self.boot_id = str(uuid.uuid4())
@@ -38,6 +40,7 @@ class SnapshotService:
         self.collected_at = 0.0
         self.connections = 0
         self.dispatcher = dispatcher
+        self.segment_client = segment_client
         self.command_lock = asyncio.Lock()
 
     async def refresh(self):
@@ -96,7 +99,10 @@ class SnapshotService:
                 if b"transfer-encoding" in fields:
                     return
                 request_line = lines[0]
-                if request_line == b"POST /v1/commands HTTP/1.1":
+                if request_line in (
+                    b"POST /v1/commands HTTP/1.1",
+                    b"POST /v1/segments HTTP/1.1",
+                ):
                     length = fields.get(b"content-length", b"")
                     if len(length) > 5 or not length.isdigit() or not 1 <= int(length) <= 16384:
                         status, body = "400 Bad Request", b'{"error":"INVALID_CONTENT_LENGTH"}'
@@ -131,6 +137,52 @@ class SnapshotService:
                             else "400 Bad Request"
                         )
                         body = json.dumps({"error": error.code}).encode()
+            elif request_line == b"POST /v1/segments HTTP/1.1" and payload is not None:
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        value = json.loads(payload)
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.create, value)
+                        status, body = "202 Accepted", json.dumps(result).encode()
+                    except (ValueError, TypeError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_SPEC"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                            if str(error) == "SEGMENT_SPEC_CONFLICT"
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(b"GET /v1/segments/") and request_line.endswith(
+                b" HTTP/1.1"
+            ):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        allocation_id = uuid.UUID(
+                            request_line.removeprefix(b"GET /v1/segments/")
+                            .removesuffix(b" HTTP/1.1")
+                            .decode("ascii")
+                        )
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.get, allocation_id)
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "404 Not Found"
+                            if str(error) == "SEGMENT_NOT_FOUND"
+                            else "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
             elif request_line.startswith(b"GET /v1/commands/") and request_line.endswith(
                 b" HTTP/1.1"
             ):
@@ -155,7 +207,14 @@ class SnapshotService:
                             else "400 Bad Request"
                         )
                         body = json.dumps({"error": error.code}).encode()
-            elif request_line == b"POST /v1/commands HTTP/1.1" and payload is None:
+            elif (
+                request_line
+                in (
+                    b"POST /v1/commands HTTP/1.1",
+                    b"POST /v1/segments HTTP/1.1",
+                )
+                and payload is None
+            ):
                 pass  # The bounded header/body parser already set an error.
             elif request_line == b"GET_WITH_BODY":
                 pass
@@ -233,7 +292,16 @@ async def run(config_path):
             ),
             inspect_bridge=inspect_lab_bridge,
         )
-    service = SnapshotService(reader, config["node_id"], config["client_sha256"], dispatcher)
+    segments_enabled = config.get("segments_enabled", False)
+    if type(segments_enabled) is not bool:
+        raise ValueError("Invalid segment mode")
+    service = SnapshotService(
+        reader,
+        config["node_id"],
+        config["client_sha256"],
+        dispatcher,
+        SegmentClient() if segments_enabled else None,
+    )
     context = server_context(
         credentials / "transport-ca.pem", credentials / "server.pem", credentials / "server.key"
     )

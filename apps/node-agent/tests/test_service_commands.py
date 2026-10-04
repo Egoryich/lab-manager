@@ -67,12 +67,13 @@ def request(service, header, body=b""):
     return writer.output
 
 
-def service(dispatcher=None):
+def service(dispatcher=None, segment_client=None):
     return SnapshotService(
         None,
         str(uuid.uuid4()),
         hashlib.sha256(b"client-cert").hexdigest(),
         dispatcher,
+        segment_client,
     )
 
 
@@ -115,3 +116,46 @@ def test_command_status_and_get_body_rejection():
     )
     assert response.startswith(b"HTTP/1.1 400 Bad Request")
     assert dispatcher.calls == [("status", operation_id)]
+
+
+class Segments:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, value):
+        self.calls.append(("create", value))
+        return {**value, "bridge": "lmbr123456", "state": "CREATED"}
+
+    def get(self, allocation_id):
+        self.calls.append(("get", allocation_id))
+        return {"allocation_id": str(allocation_id), "bridge": "lmbr123456", "state": "CREATED"}
+
+
+def test_segment_http_is_disabled_without_local_helper_and_uses_bounded_body():
+    segments = Segments()
+    allocation_id = uuid.uuid4()
+    value = {
+        "allocation_id": str(allocation_id),
+        "mode": "ISOLATED",
+        "cidr": "10.70.1.0/29",
+    }
+    body = json.dumps(value).encode()
+    header = (
+        b"POST /v1/segments HTTP/1.1\r\n"
+        + f"Content-Length: {len(body)}\r\n".encode()
+        + b"Content-Type: application/json\r\n\r\n"
+    )
+    assert request(service(segment_client=segments), header, body).startswith(
+        b"HTTP/1.1 202 Accepted"
+    )
+    assert segments.calls == [("create", value)]
+    assert request(service(), header, body).startswith(b"HTTP/1.1 503 Service Unavailable")
+    get = f"GET /v1/segments/{allocation_id} HTTP/1.1\r\n\r\n".encode()
+    assert request(service(segment_client=segments), get).startswith(b"HTTP/1.1 200 OK")
+    assert segments.calls[-1] == ("get", allocation_id)
+    oversized = request(
+        service(segment_client=segments),
+        b"POST /v1/segments HTTP/1.1\r\nContent-Length: 16385\r\n"
+        b"Content-Type: application/json\r\n\r\n",
+    )
+    assert oversized.startswith(b"HTTP/1.1 400 Bad Request")
