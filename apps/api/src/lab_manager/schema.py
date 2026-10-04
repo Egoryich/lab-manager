@@ -1,3 +1,3 @@
 """Schema revision required by both API and worker processes."""
 
-CURRENT_SCHEMA_REVISION = "0008_runtime"
+CURRENT_SCHEMA_REVISION = "0009_commands"

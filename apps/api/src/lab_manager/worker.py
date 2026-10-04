@@ -25,6 +25,7 @@ from lab_manager.catalog_schemas import EnvironmentCreate, MachineSizing
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.models import User, UserRole
+from lab_manager.node_command_worker import process as process_node_command
 from lab_manager.node_transport import load_endpoints
 from lab_manager.nodes import poll_forever
 from lab_manager.operation_models import Operation, WorkerHeartbeat
@@ -225,12 +226,13 @@ async def execute_claim(sessions, claim):
             await finish(db, claim, error_code="WORKER_RETRY_REQUIRED", retry=True)
 
 
-async def tick(sessions, worker_id):
+async def tick(sessions, worker_id, endpoints=()):
     await heartbeat(sessions, worker_id)
     claim = await claim_next(sessions, worker_id)
     if claim:
         await execute_claim(sessions, claim)
-    return claim is not None
+        return True
+    return await process_node_command(sessions, worker_id, endpoints)
 
 
 async def run(once=False):
@@ -264,7 +266,7 @@ async def run(once=False):
         while not stop.is_set():
             delay = 2
             try:
-                if await tick(sessions, worker_id):
+                if await tick(sessions, worker_id, endpoints):
                     delay = 0.1
                 HEALTH_FILE.write_text(str(time.monotonic()))
             except Exception as error:
