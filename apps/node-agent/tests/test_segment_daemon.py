@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from lab_node_agent.segment_daemon import dispatch
+from lab_node_agent.segment_daemon import dispatch, restore_bridges
 from lab_node_agent.segments import SegmentError, SegmentSpec
 
 
@@ -49,3 +49,20 @@ def test_segment_helper_accepts_only_typed_create_and_status():
         dispatch(
             json.dumps({"action": "get", "allocation_id": str(uuid.uuid4())}).encode(), manager
         )
+
+
+def test_startup_recreates_persisted_bridges_and_reports_live_state():
+    manager = Manager()
+    allocation_id = uuid.uuid4()
+    spec = SegmentSpec.parse(
+        {"allocation_id": str(allocation_id), "mode": "GROUP_LAN", "cidr": "10.70.1.0/29"}
+    )
+    manager.records[str(allocation_id)] = spec.record()
+    restore_bridges(manager)
+    assert manager.link(spec) == {"ifname": spec.bridge}
+
+    manager.link = lambda _spec: {"ifname": spec.bridge, "flags": ["UP"]}
+    result = dispatch(
+        json.dumps({"action": "get", "allocation_id": str(allocation_id)}).encode(), manager
+    )
+    assert result["state"] == "ACTIVE"

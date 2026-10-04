@@ -1,9 +1,7 @@
 """Root-only local bridge helper; the mTLS agent reaches it over a Unix socket."""
 
-import fcntl
 import json
 import os
-import pwd
 import socket
 import stat
 import struct
@@ -52,9 +50,9 @@ def dispatch(request: bytes, manager: SegmentManager) -> dict:
             link = manager.link(spec)
             if link is None:
                 raise SegmentError("SEGMENT_BRIDGE_MISSING")
-            if "UP" in link.get("flags", []) or link.get("master"):
-                raise SegmentError("SEGMENT_BRIDGE_NOT_CLOSED")
-            return {**record, "state": "CREATED"}
+            if link.get("master"):
+                raise SegmentError("SEGMENT_BRIDGE_INVALID")
+            return {**record, "state": "ACTIVE" if "UP" in link.get("flags", []) else "CREATED"}
     except (TypeError, ValueError, KeyError) as error:
         raise SegmentError("INVALID_SEGMENT_REQUEST") from error
     raise SegmentError("INVALID_SEGMENT_REQUEST")
@@ -74,7 +72,23 @@ def read_line(connection: socket.socket) -> bytes:
     raise SegmentError("INVALID_SEGMENT_REQUEST")
 
 
+def restore_bridges(manager: SegmentManager) -> None:
+    """Restore known bridges after a host reboot, without changing live bridges.
+
+    The persistent allocation file is authoritative. Existing links must still
+    prove their Lab Manager alias and bridge type; unknown links are untouched.
+    """
+    for record in manager.read().values():
+        spec = SegmentSpec.parse(
+            {field: record[field] for field in ("allocation_id", "mode", "cidr")}
+        )
+        manager.create(spec)
+
+
 def serve() -> None:
+    import fcntl
+    import pwd
+
     if os.geteuid() != 0:
         raise RuntimeError("ROOT_REQUIRED")
     user = pwd.getpwnam("lab-node-agent")
@@ -97,6 +111,9 @@ def serve() -> None:
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     if STATE_DIR.is_symlink() or STATE_DIR.stat().st_uid != 0 or STATE_DIR.stat().st_mode & 0o077:
         raise RuntimeError("STATE_DIRECTORY_UNSAFE")
+    with (STATE_DIR / "segments.lock").open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        restore_bridges(SegmentManager())
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(SOCKET))
         os.chown(SOCKET, 0, user.pw_gid)

@@ -3,10 +3,13 @@ import socket
 import threading
 import uuid
 
+import pytest
+
 from lab_node_agent.segment_client import SegmentClient
 from lab_node_agent.segments import SegmentSpec
 
 
+@pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix sockets required")
 def test_unprivileged_client_exchanges_exact_segment_identity(tmp_path):
     allocation_id = uuid.uuid4()
     spec = {

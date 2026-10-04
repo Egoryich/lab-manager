@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from lab_node_agent.network_policy import SegmentMode
+from lab_node_agent.segment_daemon import restore_bridges
 from lab_node_agent.segments import SegmentError, SegmentManager, SegmentSpec
 
 
@@ -135,6 +136,28 @@ def test_partial_create_can_resume_only_with_matching_alias(tmp_path):
     subject.write({str(segment.allocation_id): segment.record()})
     assert subject.create(segment) == segment.bridge
     assert subject.create(segment) == segment.bridge
+
+
+def test_startup_restores_missing_bridge_without_changing_live_one(tmp_path):
+    fake = FakeIP()
+    subject = manager(tmp_path, fake)
+    missing = spec()
+    live = spec()
+    subject.write(
+        {
+            str(missing.allocation_id): missing.record(),
+            str(live.allocation_id): live.record(),
+        }
+    )
+    fake.links[live.bridge] = {
+        "linkinfo": {"info_kind": "bridge"},
+        "ifalias": live.alias,
+        "flags": ["UP"],
+    }
+    restore_bridges(subject)
+    assert subject.link(missing) is not None
+    assert fake.links[live.bridge]["flags"] == ["UP"]
+    assert sum(call[:2] == ("link", "add") for call in fake.calls) == 1
 
 
 @pytest.mark.parametrize(
