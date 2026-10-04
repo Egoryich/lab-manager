@@ -24,11 +24,13 @@ from lab_manager.reservation_models import (
     NodeResourcePolicy,
 )
 from lab_manager.reservations import AdmissionRejected, cancel_future_lesson, reserve_lesson
+from lab_manager.runtime_bindings import bind_prepared_runtimes
 from lab_manager.runtime_models import (
     EnvironmentRun,
     ProviderRuntimeBinding,
     RunRuntime,
     Runtime,
+    RuntimeDisk,
 )
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -43,6 +45,7 @@ async def setup(app, teacher_ids):
         "sample": {
             "admission_ready": True,
             "ownership_reconciled": True,
+            "guests": [],
             "external_running_memory_mib": 0,
             "external_cpu_millicredits": 0,
             "host": {
@@ -219,6 +222,13 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
         app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
     )
     assert repeated.id == run.id
+    bindings = await asyncio.gather(
+        *(bind_prepared_runtimes(app.state.sessions, run_id=run.id) for _ in range(2))
+    )
+    assert {item.vmid for item in bindings[0]} == {900000, 900001}
+    assert {item.vmid for item in bindings[0]} == {item.vmid for item in bindings[1]}
+    async with app.state.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(RuntimeDisk)) == 2
     async with app.state.sessions() as db:
         first = list(
             await db.scalars(select(Runtime).where(Runtime.environment_id == environment_id))
@@ -250,6 +260,8 @@ async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, 
         app.state.sessions, reservation_id=next_reservation.id, teacher_id=teacher.id
     )
     assert second.id != run.id and second.generation == 2
+    reused_bindings = await bind_prepared_runtimes(app.state.sessions, run_id=second.id)
+    assert {item.vmid for item in reused_bindings} == {900000, 900001}
     async with app.state.sessions() as db:
         later = list(
             await db.scalars(select(Runtime).where(Runtime.environment_id == environment_id))
