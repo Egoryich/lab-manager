@@ -80,6 +80,11 @@ class Runtime(Base):
         ),
         UniqueConstraint("id", "environment_id", name="uq_runtimes_id_environment_id"),
         UniqueConstraint("id", "node_id", name="uq_runtimes_id_node_id"),
+        UniqueConstraint("network_allocation_id", "guest_ipv4", name="uq_runtimes_segment_ipv4"),
+        CheckConstraint(
+            "(network_allocation_id IS NULL) = (guest_ipv4 IS NULL)",
+            name="network_address_pair",
+        ),
         Index(
             "uq_runtimes_active_student",
             "environment_id",
@@ -98,6 +103,10 @@ class Runtime(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     environment_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("environments.id"))
     node_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("node_observations.id"))
+    network_allocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("network_segment_allocations.id")
+    )
+    guest_ipv4: Mapped[str | None] = mapped_column(String(15))
     role: Mapped[str] = mapped_column(String(8))
     student_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"))
     membership_generation: Mapped[int | None] = mapped_column(Integer)
