@@ -197,11 +197,11 @@ def verify_entrypoints(target, wheel):
             "--force-reinstall",
             str(target / wheel),
         )
-        # The updater runs with UMask=0077. pip recreates package files during
-        # relocation, so make them readable to the unprivileged service again.
-        run("chmod", "-R", "a+rX", str(target / "venv"))
         for name in scripts:
             run(str(target / "venv/bin" / name), "--help")
+    # The updater runs with UMask=0077. pip recreates package files during
+    # relocation. This also repairs a staged release left by a failed update.
+    run("chmod", "-R", "a+rX", str(target / "venv"))
     run(
         "runuser",
         "-u",
