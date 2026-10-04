@@ -14,7 +14,8 @@ from lab_manager.catalog_models import (
     TeacherPolicyAssignment,
     TemplateVersion,
 )
-from lab_manager.models import Group, GroupMember
+from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
+from lab_manager.models import Group, GroupMember, User
 from lab_manager.nodes import NodeObservation
 from lab_manager.reservation_models import (
     EnvironmentDiskAllocation,
@@ -31,6 +32,7 @@ from lab_manager.runtime_models import (
 )
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm.attributes import flag_modified
 
 pytestmark = pytest.mark.integration
 
@@ -142,6 +144,211 @@ async def setup(app, teacher_ids):
             await db.flush()
             environment_ids.append(environment.id)
     return node_id, environment_ids
+
+
+async def ready_roster(app, teacher_id, student_id, environment_id):
+    async with app.state.sessions() as db, db.begin():
+        environment = await db.get(Environment, environment_id)
+        group = await db.get(Group, environment.group_id)
+        db.add(GroupMember(group_id=group.id, student_id=student_id))
+        group.version += 1
+        db.add_all(
+            (
+                TeacherPolicyAssignment(
+                    teacher_id=teacher_id, revision_id=environment.permission_revision_id
+                ),
+                DemoProfileGrant(
+                    revision_id=environment.permission_revision_id,
+                    profile_version_id=environment.profile_version_id,
+                ),
+                PolicyPermission(
+                    revision_id=environment.permission_revision_id,
+                    key="can_create_lxc",
+                    allowed=True,
+                ),
+                PolicyPermission(
+                    revision_id=environment.permission_revision_id,
+                    key="can_use_linux_profiles",
+                    allowed=True,
+                ),
+            )
+        )
+        for key, value in {
+            "max_lxc_per_environment": 10,
+            "max_vm_per_environment": 0,
+            "max_total_ram_mb": 4096,
+            "max_cpu_credits": 4,
+            "max_disk_gb": 100,
+            "max_active_environments": 1,
+        }.items():
+            db.add(
+                PolicyLimit(revision_id=environment.permission_revision_id, key=key, value=value)
+            )
+
+
+async def test_prepared_lesson_reuses_student_and_demo_runtimes_after_stop(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    demand = ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=demand,
+    )
+    attempts = await asyncio.gather(
+        *(
+            prepare_reserved_run(
+                app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+            )
+            for _ in range(2)
+        )
+    )
+    assert attempts[0].id == attempts[1].id
+    run = attempts[0]
+    assert run.state == "PREPARING" and run.generation == 1
+    repeated = await prepare_reserved_run(
+        app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+    )
+    assert repeated.id == run.id
+    async with app.state.sessions() as db:
+        first = list(
+            await db.scalars(select(Runtime).where(Runtime.environment_id == environment_id))
+        )
+        assert {item.role for item in first} == {"STUDENT", "DEMO"}
+        assert next(item for item in first if item.role == "STUDENT").student_id == student.id
+        assert await db.scalar(select(func.count()).select_from(RunRuntime)) == 2
+    async with app.state.sessions() as db, db.begin():
+        stored_run = await db.get(EnvironmentRun, run.id)
+        stored_run.state = "STOPPED"
+        stored_run.stopped_at = await db.scalar(select(func.clock_timestamp()))
+        stored_reservation = await db.get(LessonReservation, reservation.id)
+        stored_reservation.state = "COMPLETED"
+        for runtime in await db.scalars(
+            select(Runtime).where(Runtime.environment_id == environment_id)
+        ):
+            runtime.state = "STOPPED"
+    next_reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=demand,
+    )
+    second = await prepare_reserved_run(
+        app.state.sessions, reservation_id=next_reservation.id, teacher_id=teacher.id
+    )
+    assert second.id != run.id and second.generation == 2
+    async with app.state.sessions() as db:
+        later = list(
+            await db.scalars(select(Runtime).where(Runtime.environment_id == environment_id))
+        )
+        assert {item.id for item in first} == {item.id for item in later}
+        assert await db.scalar(select(func.count()).select_from(RunRuntime)) == 4
+
+
+async def test_changed_roster_cannot_start_on_old_disk_reservation(app, seed):
+    teacher = await seed("TEACHER")
+    first_student = await seed("STUDENT")
+    second_student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, first_student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    async with app.state.sessions() as db, db.begin():
+        group_id = await db.scalar(
+            select(Environment.group_id).where(Environment.id == environment_id)
+        )
+        db.add(GroupMember(group_id=group_id, student_id=second_student.id))
+        group = await db.get(Group, group_id)
+        group.version += 1
+    with pytest.raises(RunPreparationRejected, match="BOOKED_DEMAND_CHANGED"):
+        await prepare_reserved_run(
+            app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+        )
+    async with app.state.sessions() as db:
+        assert (await db.get(LessonReservation, reservation.id)).state == "RESERVED"
+        assert await db.scalar(select(func.count()).select_from(Runtime)) == 0
+
+
+async def test_suspended_teacher_cannot_prepare_booked_lesson(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    async with app.state.sessions() as db, db.begin():
+        teacher = await db.get(User, teacher.id)
+        teacher.status = "SUSPENDED"
+    with pytest.raises(RunPreparationRejected, match="TEACHER_NOT_ACTIVE"):
+        await prepare_reserved_run(
+            app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+        )
+    async with app.state.sessions() as db:
+        assert (await db.get(LessonReservation, reservation.id)).state == "RESERVED"
+        assert await db.scalar(select(func.count()).select_from(Runtime)) == 0
+
+
+async def test_storage_filling_after_booking_blocks_run_preparation(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    async with app.state.sessions() as db, db.begin():
+        observation = await db.get(NodeObservation, node_id)
+        observation.payload["sample"]["storages"][0]["available_bytes"] = 5 * GIB
+        flag_modified(observation, "payload")
+    with pytest.raises(RunPreparationRejected, match="STORAGE_UNSAFE"):
+        await prepare_reserved_run(
+            app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+        )
+    async with app.state.sessions() as db:
+        assert (await db.get(LessonReservation, reservation.id)).state == "RESERVED"
+        assert await db.scalar(select(func.count()).select_from(Runtime)) == 0
 
 
 async def test_two_teachers_cannot_book_the_same_node_capacity(app, seed):
