@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from lab_node_agent.proxmox import ProxmoxConfig
 
 STORAGE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+POOL = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
 TEMPLATE = re.compile(
     r"[A-Za-z][A-Za-z0-9_.-]{0,63}:vztmpl/debian-[A-Za-z0-9_.+-]+\.tar\.(?:zst|gz|xz)"
 )
@@ -46,6 +47,7 @@ class CreateLxc:
     hostname: str
     template: str
     storage: str
+    pool: str
     bridge: str
     memory_mib: int
     cores: int
@@ -63,6 +65,7 @@ class CreateLxc:
             or not HOSTNAME.fullmatch(self.hostname)
             or not TEMPLATE.fullmatch(self.template)
             or not STORAGE.fullmatch(self.storage)
+            or not POOL.fullmatch(self.pool)
             or not BRIDGE.fullmatch(self.bridge)
             or type(self.memory_mib) is not int
             or not 128 <= self.memory_mib <= 262144
@@ -88,6 +91,7 @@ class CreateLxc:
             "ostemplate": self.template,
             "ostype": "debian",
             "rootfs": f"{self.storage}:{self.disk_gib}",
+            "pool": self.pool,
             "memory": str(self.memory_mib),
             "cores": str(self.cores),
             "swap": "0",

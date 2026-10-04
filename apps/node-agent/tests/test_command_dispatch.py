@@ -77,6 +77,7 @@ def dispatcher(tmp_path, node_id, provider, inspected):
         node_id=node_id,
         template="local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
         storage="student-lvm",
+        pool="lab-manager",
         journal=journal,
         provider=provider,
         inspect_bridge=lambda spec: inspected.append(spec),

@@ -61,6 +61,7 @@ class CommandDispatcher:
         node_id: uuid.UUID,
         template: str,
         storage: str,
+        pool: str,
         journal: CommandJournal,
         provider,
         inspect_bridge,
@@ -68,6 +69,7 @@ class CommandDispatcher:
         self.node_id = node_id
         self.template = template
         self.storage = storage
+        self.pool = pool
         self.journal = journal
         self.provider = provider
         self.inspect_bridge = inspect_bridge
@@ -261,6 +263,7 @@ class CommandDispatcher:
             hostname=raw["hostname"],
             template=raw["template"],
             storage=raw["storage"],
+            pool=self.pool,
             bridge=segment.bridge,
             memory_mib=raw["memory_mib"],
             cores=raw["cores"],

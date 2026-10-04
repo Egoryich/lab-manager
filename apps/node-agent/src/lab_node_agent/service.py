@@ -221,6 +221,7 @@ async def run(config_path):
             node_id=uuid.UUID(config["node_id"]),
             template=config["command_template"],
             storage=config["command_storage"],
+            pool=config["command_pool"],
             journal=journal,
             provider=ProxmoxLxcProvider(
                 ProxmoxConfig(

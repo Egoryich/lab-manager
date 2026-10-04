@@ -60,6 +60,7 @@ def spec(**changes):
         "hostname": "lab-student-01",
         "template": "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
         "storage": "student-lvm",
+        "pool": "lab-manager",
         "bridge": "lmbrabc123",
         "memory_mib": 1024,
         "cores": 1,
@@ -82,6 +83,7 @@ def test_create_submits_unprivileged_stopped_debian_with_closed_link(tmp_path, m
     assert form["vmid"] == "200"
     assert form["ostemplate"] == guest.template
     assert form["rootfs"] == "student-lvm:10"
+    assert form["pool"] == "lab-manager"
     assert form["unprivileged"] == "1"
     assert form["start"] == form["onboot"] == "0"
     assert "link_down=1" in form["net0"]
@@ -188,6 +190,7 @@ def test_current_status_uses_bounded_lxc_path(tmp_path, monkeypatch):
         {"template": "local:vztmpl/ubuntu-24.tar.zst"},
         {"template": "local:vztmpl/../debian-13.tar.zst"},
         {"bridge": "vmbr0"},
+        {"pool": "../other"},
         {"vmid": True},
         {"ssh_public_key": "not-a-key"},
     ],
