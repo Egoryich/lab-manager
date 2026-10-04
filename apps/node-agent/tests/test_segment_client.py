@@ -25,23 +25,28 @@ def test_unprivileged_client_exchanges_exact_segment_identity(tmp_path):
         listener.listen(2)
 
         def serve():
-            for _ in range(2):
+            for _ in range(3):
                 connection, _ = listener.accept()
                 with connection:
                     data = bytearray()
                     while not data.endswith(b"\n"):
                         data.extend(connection.recv(1024))
                     requests.append(json.loads(data))
-                    connection.sendall(json.dumps({"ok": True, "result": record}).encode() + b"\n")
+                    response = record if len(requests) < 3 else {**record, "state": "ACTIVE"}
+                    connection.sendall(
+                        json.dumps({"ok": True, "result": response}).encode() + b"\n"
+                    )
 
         thread = threading.Thread(target=serve)
         thread.start()
         client = SegmentClient(path)
         assert client.create(spec) == record
         assert client.get(allocation_id) == record
+        assert client.get(allocation_id)["state"] == "ACTIVE"
         thread.join(timeout=5)
         assert not thread.is_alive()
     assert requests == [
         {"action": "create", "spec": spec},
+        {"action": "get", "allocation_id": str(allocation_id)},
         {"action": "get", "allocation_id": str(allocation_id)},
     ]

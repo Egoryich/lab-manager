@@ -77,7 +77,7 @@ class SegmentClient:
         if (
             spec.allocation_id != allocation_id
             or result.get("bridge") != spec.bridge
-            or result.get("state") != "CREATED"
+            or result.get("state") not in ("CREATED", "ACTIVE")
         ):
             raise SegmentError("SEGMENT_HELPER_MISMATCH")
         return result
