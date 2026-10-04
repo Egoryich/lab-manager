@@ -18,6 +18,8 @@ NETWORK_BASELINE = "e6fbbc8d97adbccd238cf9b905194d7f20964268"
 REQUIRED_API_ROUTES = {
     "/api/admin/nodes/{node_id}/resource-policy",
     "/api/environments/{environment_id}/lesson-preview",
+    "/api/environments/{environment_id}/reservations",
+    "/api/reservations/{reservation_id}/cancel",
 }
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -196,7 +198,7 @@ def check_api_routes():
     missing = REQUIRED_API_ROUTES - paths.keys()
     if missing:
         raise RuntimeError("lesson planning API routes are missing")
-    return "node resource policy and lesson preview routes are available"
+    return "node policy, lesson preview and booking routes are available"
 
 
 def check_node(management_bridge, guest_bridge):
