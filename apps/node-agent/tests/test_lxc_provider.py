@@ -62,6 +62,8 @@ def spec(**changes):
         "storage": "student-lvm",
         "pool": "lab-manager",
         "bridge": "lmbrabc123",
+        "cidr": "10.70.1.0/29",
+        "address": "10.70.1.2",
         "memory_mib": 1024,
         "cores": 1,
         "disk_gib": 10,
@@ -87,6 +89,7 @@ def test_create_submits_unprivileged_stopped_debian_with_closed_link(tmp_path, m
     assert form["unprivileged"] == "1"
     assert form["start"] == form["onboot"] == "0"
     assert "link_down=1" in form["net0"]
+    assert "ip=10.70.1.2/29,gw=10.70.1.1" in form["net0"]
     assert "ip6=manual" in form["net0"]
     assert form["description"] == guest.marker
     assert form["ssh-public-keys"] == guest.ssh_public_key
@@ -106,7 +109,7 @@ def test_retry_never_creates_second_guest_or_adopts_foreign_vmid(tmp_path, monke
         "rootfs": f"student-lvm:vm-{guest.vmid}-disk-0,size={guest.disk_gib}G",
         "net0": (
             f"name=eth0,bridge={guest.bridge},firewall=1,hwaddr=BC:24:11:00:00:00,"
-            "ip=manual,ip6=manual,link_down=1,type=veth"
+            "ip=10.70.1.2/29,gw=10.70.1.1,ip6=manual,link_down=1,type=veth"
         ),
     }
     subject = provider(tmp_path, monkeypatch, [existing])
@@ -135,6 +138,7 @@ def test_retry_never_creates_second_guest_or_adopts_foreign_vmid(tmp_path, monke
         {"rootfs": "student-lvm:vm-200-disk-0,size=20G"},
         {"net0": existing["net0"].replace("link_down=1", "link_down=0")},
         {"net0": existing["net0"].replace("firewall=1", "firewall=0")},
+        {"net0": existing["net0"].replace("ip=10.70.1.2/29", "ip=10.70.1.3/29")},
     ):
         subject = provider(tmp_path, monkeypatch, [{**existing, **change}])
         with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
@@ -193,6 +197,10 @@ def test_current_status_uses_bounded_lxc_path(tmp_path, monkeypatch):
         {"pool": "../other"},
         {"vmid": True},
         {"ssh_public_key": "not-a-key"},
+        {"address": "192.168.0.123"},
+        {"address": "10.70.1.1"},
+        {"address": "10.70.1.0"},
+        {"cidr": "8.8.8.0/24"},
     ],
 )
 def test_unsafe_lxc_spec_rejected(change):

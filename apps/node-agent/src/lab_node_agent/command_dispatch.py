@@ -1,6 +1,7 @@
 """Typed, journaled LXC submission. A receipt is committed before provider I/O."""
 
 import hashlib
+import ipaddress
 import json
 import re
 import subprocess
@@ -102,6 +103,8 @@ class CommandDispatcher:
             expected = (
                 {
                     "bridge": spec.bridge,
+                    "cidr": spec.cidr,
+                    "address": spec.address,
                     "storage": spec.storage,
                     "disk_gib": spec.disk_gib,
                     "memory_mib": spec.memory_mib,
@@ -227,7 +230,8 @@ class CommandDispatcher:
                 and str(config.get("cores")) == str(expected["cores"])
                 and f"bridge={expected['bridge']}" in net
                 and "link_down=1" in net
-                and "ip=manual" in net
+                and f"ip={expected['address']}/{expected['cidr'].split('/')[1]}" in net
+                and f"gw={ipaddress.IPv4Network(expected['cidr']).network_address + 1}" in net
                 and "ip6=manual" in net
                 and re.fullmatch(
                     rf"{re.escape(expected['storage'])}:vm-{receipt.vmid}-disk-[0-9]+,"
@@ -247,6 +251,7 @@ class CommandDispatcher:
             "template",
             "storage",
             "segment",
+            "address",
             "memory_mib",
             "cores",
             "disk_gib",
@@ -265,6 +270,8 @@ class CommandDispatcher:
             storage=raw["storage"],
             pool=self.pool,
             bridge=segment.bridge,
+            cidr=segment.cidr,
+            address=raw["address"],
             memory_mib=raw["memory_mib"],
             cores=raw["cores"],
             disk_gib=raw["disk_gib"],

@@ -1,10 +1,12 @@
 """Bounded Proxmox LXC operations for a future durable lesson command worker.
 
 This adapter has no route from the browser or the inventory endpoint. Its
-caller must first reserve capacity, an address and a VMID, then record the
-returned Proxmox task before considering the guest ready.
+caller must first reserve capacity, a subnet/address and a VMID, then record
+the returned Proxmox task before considering the guest ready. The guest link
+remains down until the segment gateway and firewall policy are ready.
 """
 
+import ipaddress
 import json
 import re
 import ssl
@@ -15,6 +17,7 @@ import uuid
 from dataclasses import dataclass
 
 from lab_node_agent.proxmox import ProxmoxConfig
+from lab_node_agent.segments import PRIVATE_POOLS
 
 STORAGE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
 POOL = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
@@ -49,12 +52,26 @@ class CreateLxc:
     storage: str
     pool: str
     bridge: str
+    cidr: str
+    address: str
     memory_mib: int
     cores: int
     disk_gib: int
     ssh_public_key: str
 
     def __post_init__(self):
+        try:
+            subnet = ipaddress.IPv4Network(self.cidr, strict=True)
+            address = ipaddress.IPv4Address(self.address)
+            gateway = subnet.network_address + 1
+            valid_address = (
+                subnet.prefixlen <= 30
+                and address in subnet
+                and address not in (subnet.network_address, subnet.broadcast_address, gateway)
+                and any(subnet.subnet_of(pool) for pool in PRIVATE_POOLS)
+            )
+        except (TypeError, ValueError):
+            valid_address = False
         if (
             not isinstance(self.runtime_id, uuid.UUID)
             or self.runtime_id.int == 0
@@ -67,6 +84,7 @@ class CreateLxc:
             or not STORAGE.fullmatch(self.storage)
             or not POOL.fullmatch(self.pool)
             or not BRIDGE.fullmatch(self.bridge)
+            or not valid_address
             or type(self.memory_mib) is not int
             or not 128 <= self.memory_mib <= 262144
             or type(self.cores) is not int
@@ -85,6 +103,7 @@ class CreateLxc:
         return f"lab-manager:runtime={self.runtime_id};generation={self.generation}"
 
     def form(self):
+        subnet = ipaddress.IPv4Network(self.cidr)
         return {
             "vmid": str(self.vmid),
             "hostname": self.hostname,
@@ -98,7 +117,11 @@ class CreateLxc:
             "unprivileged": "1",
             "onboot": "0",
             "start": "0",
-            "net0": f"name=eth0,bridge={self.bridge},firewall=1,ip=manual,ip6=manual,link_down=1",
+            "net0": (
+                f"name=eth0,bridge={self.bridge},firewall=1,"
+                f"ip={self.address}/{subnet.prefixlen},gw={subnet.network_address + 1},"
+                "ip6=manual,link_down=1"
+            ),
             "ssh-public-keys": self.ssh_public_key,
             "description": self.marker,
         }
@@ -184,6 +207,7 @@ class ProxmoxLxcProvider:
                 raise LxcOperationError("VMID_ALREADY_OWNED")
             net = str(existing.get("net0", "")).split(",")
             rootfs = str(existing.get("rootfs", ""))
+            subnet = ipaddress.IPv4Network(spec.cidr)
             if (
                 str(existing.get("unprivileged")) != "1"
                 or str(existing.get("onboot", "0")) != "0"
@@ -202,7 +226,8 @@ class ProxmoxLxcProvider:
                         "name=eth0",
                         f"bridge={spec.bridge}",
                         "firewall=1",
-                        "ip=manual",
+                        f"ip={spec.address}/{subnet.prefixlen}",
+                        f"gw={subnet.network_address + 1}",
                         "ip6=manual",
                         "link_down=1",
                     )

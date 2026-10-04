@@ -63,6 +63,7 @@ def command(node_id, *, kind="LXC_CREATE"):
                 "mode": "ISOLATED",
                 "cidr": "10.70.0.0/24",
             },
+            "address": "10.70.0.2",
             "memory_mib": 512,
             "cores": 1,
             "disk_gib": 4,
@@ -170,7 +171,10 @@ def test_create_reconciliation_checks_exact_storage_size_and_bridge(tmp_path):
         "hostname": payload["spec"]["hostname"],
         "memory": payload["spec"]["memory_mib"],
         "cores": payload["spec"]["cores"],
-        "net0": f"name=eth0,bridge={bridge},firewall=1,ip=manual,ip6=manual,link_down=1",
+        "net0": (
+            f"name=eth0,bridge={bridge},firewall=1,"
+            "ip=10.70.0.2/24,gw=10.70.0.1,ip6=manual,link_down=1"
+        ),
         "rootfs": "local-lvm:vm-901001-disk-0,size=4G",
     }
     operation_id = uuid.UUID(payload["operation_id"])
