@@ -34,6 +34,7 @@ trap cleanup EXIT
 
 test ! -e "/etc/pve/lxc/$vmid.conf"
 test ! -e "/etc/pve/qemu-server/$vmid.conf"
+test ! -e "/var/lib/lxc/$vmid"
 if lvs --noheadings -o lv_name "$storage" | grep -Eq "^[[:space:]]*vm-$vmid-disk-"; then
     echo "VMID $vmid уже имеет диски; ничего не создаю" >&2
     exit 1
@@ -49,6 +50,9 @@ printf '{"allocation_id":"%s","mode":"ISOLATED","cidr":"10.70.255.248/30"}\n' \
 bridge=$($segment create "$spec")
 test "${bridge:0:4}" = lmbr
 
+# Proxmox creates /var/lib/lxc/<vmid> under the caller's umask. 077 makes
+# it inaccessible to lxc-usernsexec (host UID 100000) during extraction.
+umask 022
 pct create "$vmid" "$template" \
     --hostname lab-smoke-debian \
     --rootfs "$storage:4" \
