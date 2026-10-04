@@ -176,7 +176,7 @@ class ProxmoxLxcProvider:
             raise LxcOperationError("INVALID_LXC_SPEC")
         existing = self.config_for(spec.vmid)
         if existing is not None:
-            if existing.get("description") != spec.marker:
+            if str(existing.get("description", "")).rstrip("\r\n") != spec.marker:
                 raise LxcOperationError("VMID_ALREADY_OWNED")
             if (
                 str(existing.get("unprivileged")) != "1"
@@ -203,7 +203,7 @@ class ProxmoxLxcProvider:
             raise LxcOperationError("INVALID_RUNTIME_ID")
         config = self.config_for(vmid)
         marker = f"lab-manager:runtime={runtime_id};generation={generation}"
-        if config is None or config.get("description") != marker:
+        if config is None or str(config.get("description", "")).rstrip("\r\n") != marker:
             raise LxcOperationError("GUEST_OWNERSHIP_UNCONFIRMED")
         if (
             str(config.get("unprivileged")) != "1"

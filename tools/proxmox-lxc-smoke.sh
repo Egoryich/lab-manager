@@ -4,7 +4,10 @@ set -euo pipefail
 umask 077
 
 test "$(id -u)" -eq 0
-test "$(/opt/lab-manager-node/current/venv/bin/python -c 'from importlib.metadata import version; print(version("lab-node-agent"))')" = '0.11.0'
+case "$(/opt/lab-manager-node/current/venv/bin/python -c 'from importlib.metadata import version; print(version("lab-node-agent"))')" in
+    0.11.0|0.11.1) ;;
+    *) echo 'Требуется проверенная версия агента 0.11.x' >&2; exit 1 ;;
+esac
 systemctl is-active --quiet lab-node-network-guard.service
 nft list table inet lab_manager >/dev/null
 nft list table bridge lab_manager_l2 >/dev/null
@@ -63,7 +66,7 @@ pct create "$vmid" "$template" \
 
 verify_owner() {
     pvesh get "/nodes/$node/lxc/$vmid/config" --output-format json |
-        python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("description") == sys.argv[1]; assert str(d.get("unprivileged")) == "1"; assert "link_down=1" in d.get("net0", ""); print("Владелец и отключённая сеть подтверждены")' "$marker"
+        python3 -c 'import json,sys; d=json.load(sys.stdin); assert str(d.get("description", "")).rstrip("\r\n") == sys.argv[1]; assert str(d.get("unprivileged")) == "1"; assert "link_down=1" in d.get("net0", ""); print("Владелец и отключённая сеть подтверждены")' "$marker"
 }
 verify_owner
 test "$(pct status "$vmid")" = "status: stopped"

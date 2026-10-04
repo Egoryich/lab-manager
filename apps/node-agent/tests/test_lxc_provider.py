@@ -104,10 +104,18 @@ def test_retry_never_creates_second_guest_or_adopts_foreign_vmid(tmp_path, monke
     assert subject.create(guest) is None
     assert len(subject.opener.requests) == 1
 
+    subject = provider(tmp_path, monkeypatch, [{**existing, "description": guest.marker + "\n"}])
+    assert subject.create(guest) is None
+    assert len(subject.opener.requests) == 1
+
     subject = provider(tmp_path, monkeypatch, [{**existing, "description": "foreign"}])
     with pytest.raises(LxcOperationError, match="VMID_ALREADY_OWNED"):
         subject.create(guest)
     assert len(subject.opener.requests) == 1
+
+    subject = provider(tmp_path, monkeypatch, [{**existing, "description": " " + guest.marker}])
+    with pytest.raises(LxcOperationError, match="VMID_ALREADY_OWNED"):
+        subject.create(guest)
 
     subject = provider(tmp_path, monkeypatch, [{**existing, "net0": "bridge=vmbr0"}])
     with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
@@ -128,6 +136,11 @@ def test_start_and_shutdown_require_owned_unprivileged_guest(tmp_path, monkeypat
     assert subject.opener.requests[1].full_url.endswith("/lxc/200/status/start")
     assert subject.opener.requests[3].full_url.endswith("/lxc/200/status/shutdown")
     assert subject.opener.requests[3].data == b"timeout=60"
+
+    subject = provider(
+        tmp_path, monkeypatch, [{**config, "description": guest.marker + "\n"}, TASK]
+    )
+    assert subject.start(guest.vmid, guest.runtime_id, guest.generation) == TASK
 
     subject = provider(tmp_path, monkeypatch, [{**config, "net0": "bridge=vmbr0"}])
     with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
