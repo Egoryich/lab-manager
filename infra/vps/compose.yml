@@ -54,6 +54,7 @@ services:
       LAB_REDIS_URL: redis://redis:6379/0
       LAB_ENCRYPTION_KEY: ${LAB_ENCRYPTION_KEY:?Generate the deployment env file}
       LAB_DIGEST_KEY: ${LAB_DIGEST_KEY:?Generate the deployment env file}
+      LAB_GUACAMOLE_JSON_SECRET: ${LAB_GUACAMOLE_JSON_SECRET:-}
       LAB_PUBLIC_ORIGIN: ${LAB_PUBLIC_ORIGIN:?Set the public HTTPS origin}
       LAB_PASSWORD_HASH_CONCURRENCY: "1"
       PYTHONDONTWRITEBYTECODE: "1"

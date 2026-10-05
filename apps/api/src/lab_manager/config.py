@@ -3,7 +3,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     password_hash_concurrency: int = Field(default=2, ge=1, le=4)
     node_config: str | None = None
     guacamole_json_secret: SecretStr | None = None
+
+    @field_validator("guacamole_json_secret", mode="before")
+    @classmethod
+    def blank_guacamole_secret_is_unconfigured(cls, value):
+        return None if value == "" else value
 
     @model_validator(mode="after")
     def validate_security(self):

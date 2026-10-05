@@ -1,6 +1,8 @@
 import uuid
 from types import SimpleNamespace
 
+from cryptography.fernet import Fernet
+from lab_manager.config import Settings
 from lab_manager.runtime_access import may_open
 
 
@@ -22,3 +24,17 @@ def test_student_only_opens_current_own_machine_and_teacher_can_assist():
     assert not may_open(student, runtime, environment, member)
     runtime.role = "DEMO"
     assert not may_open(student, runtime, environment, member)
+
+
+def test_blank_optional_guacamole_secret_keeps_api_available():
+    settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="postgresql+psycopg://lab:pass@localhost/lab",
+        redis_url="redis://localhost:6379/0",
+        public_origin="http://localhost:5173",
+        encryption_key=Fernet.generate_key().decode(),
+        digest_key="d" * 64,
+        guacamole_json_secret="",
+    )
+    assert settings.guacamole_json_secret is None
