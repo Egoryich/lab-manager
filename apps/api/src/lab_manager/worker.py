@@ -24,6 +24,7 @@ from lab_manager.catalog_models import Environment
 from lab_manager.catalog_schemas import EnvironmentCreate, MachineSizing
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
+from lab_manager.lesson_create_reconciliation import process as reconcile_lxc_creation
 from lab_manager.lesson_start_worker import process as process_lesson_start
 from lab_manager.models import User, UserRole
 from lab_manager.node_command_worker import process as process_node_command
@@ -236,6 +237,8 @@ async def tick(sessions, worker_id, endpoints=(), codec=None):
         await execute_claim(sessions, claim)
         return True
     if await process_node_command(sessions, worker_id, endpoints):
+        return True
+    if await reconcile_lxc_creation(sessions):
         return True
     if await process_node_segment(sessions, endpoints):
         return True

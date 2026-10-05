@@ -17,6 +17,7 @@ from lab_manager.catalog_models import (
 )
 from lab_manager.lesson_command_queue import queue_lxc_create_commands
 from lab_manager.lesson_commands import LessonCommandRejected
+from lab_manager.lesson_create_reconciliation import reconcile_created_run
 from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
 from lab_manager.lesson_start_worker import process as queue_ready_lesson
 from lab_manager.models import Group, GroupMember, User
@@ -128,6 +129,50 @@ async def test_lxc_commands_wait_for_segments_and_queue_once(app, seed):
             "BEGIN OPENSSH PRIVATE KEY" not in credential.private_key_ciphertext
             for credential in credentials
         )
+    async with app.state.sessions() as db, db.begin():
+        now = await db.scalar(select(func.clock_timestamp()))
+        stored = list(await db.scalars(select(NodeCommand)))
+        for command in stored:
+            command.state = "SUCCEEDED"
+            command.submit_attempted_at = now - timedelta(seconds=2)
+            command.finished_at = now - timedelta(seconds=1)
+        observation = await db.get(NodeObservation, node_id)
+        observation.last_contact_at = now
+        observation.sample_finished_at = now
+        payload = dict(observation.payload)
+        sample = dict(payload["sample"])
+        sample["ownership_reconciled"] = True
+        sample["guests"] = [
+            {
+                "vmid": command.vmid,
+                "kind": "LXC",
+                "reported_status": "stopped",
+                "ownership_marker": f"lab-manager:runtime={command.runtime_id};generation=1",
+            }
+            for command in stored
+        ]
+        sample["local_thin_pools"] = [
+            {
+                "storage": "student-lvm",
+                "volumes": [
+                    {"name": f"vm-{command.vmid}-disk-0", "size_bytes": 10 * GIB}
+                    for command in stored
+                ],
+            }
+        ]
+        payload["sample"] = sample
+        observation.payload = payload
+    assert (
+        await reconcile_created_run(app.state.sessions, run_id=run.id, operation_id=operation_id)
+        is True
+    )
+    assert (
+        await reconcile_created_run(app.state.sessions, run_id=run.id, operation_id=operation_id)
+        is False
+    )
+    async with app.state.sessions() as db:
+        assert (await db.get(EnvironmentRun, run.id)).state == "READY"
+        assert {disk.state for disk in await db.scalars(select(RuntimeDisk))} == {"PRESENT"}
 
 
 async def test_teacher_start_request_queues_after_network_applied(
