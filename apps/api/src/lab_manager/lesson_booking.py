@@ -1,5 +1,6 @@
-"""Teacher booking: recheck permissions, roster and capacity in one transaction."""
+"""Teacher booking and durable start request for a reserved lesson."""
 
+import hashlib
 import uuid
 from datetime import datetime
 
@@ -13,8 +14,13 @@ from lab_manager.catalog_models import Environment
 from lab_manager.catalog_schemas import EnvironmentCreate, MachineSizing
 from lab_manager.dependencies import Actor, Problem, require_role
 from lab_manager.lesson_preview import demand_from_total
+from lab_manager.models import User, UserRole
+from lab_manager.operation_models import TERMINAL, Operation
+from lab_manager.operations import OperationView, event
 from lab_manager.reservation_models import LessonReservation
 from lab_manager.reservations import AdmissionRejected, cancel_future_lesson, reserve_lesson
+from lab_manager.runtime_bindings import RuntimeBindingRejected, bind_prepared_runtimes
+from lab_manager.runtime_models import EnvironmentRun
 from lab_manager.schemas import Input
 
 router = APIRouter(tags=["Lessons"])
@@ -27,6 +33,10 @@ class BookLessonRequest(Input):
     expected_group_version: int = Field(ge=1)
     starts_at: datetime
     ends_at: datetime
+
+
+class StartLessonRequest(Input):
+    request_id: uuid.UUID
 
 
 class ReservationView(Input):
@@ -181,3 +191,94 @@ async def cancel_reservation(reservation_id: uuid.UUID, actor: Actor, request: R
         code = error.reasons[0]
         status = 404 if code == "RESERVATION_NOT_FOUND" else 409
         raise Problem(status, code, "Бронь нельзя отменить.") from error
+
+
+@router.post("/reservations/{reservation_id}/start", response_model=OperationView, status_code=202)
+async def start_reserved_lesson(
+    reservation_id: uuid.UUID, body: StartLessonRequest, actor: Actor, request: Request
+):
+    """Prepare identities before returning; provider work remains asynchronous."""
+    from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
+
+    require_role(actor, "TEACHER")
+    digest = hashlib.sha256(f"LESSON_START:{reservation_id}".encode()).hexdigest()
+    async with request.app.state.sessions() as db:
+        previous = await db.scalar(
+            select(Operation).where(
+                Operation.actor_id == actor.id, Operation.request_id == body.request_id
+            )
+        )
+        if previous is not None:
+            if previous.request_digest != digest:
+                raise Problem(409, "IDEMPOTENCY_CONFLICT", "Этот запрос уже использован иначе.")
+            return previous
+    try:
+        run = await prepare_reserved_run(
+            request.app.state.sessions, reservation_id=reservation_id, teacher_id=actor.id
+        )
+        await bind_prepared_runtimes(request.app.state.sessions, run_id=run.id)
+    except RunPreparationRejected as error:
+        status = 404 if error.code == "RESERVATION_NOT_FOUND" else 409
+        raise Problem(status, error.code, "Занятие нельзя начать.") from error
+    except RuntimeBindingRejected as error:
+        raise Problem(409, error.code, "Не удалось подготовить машины занятия.") from error
+    async with request.app.state.sessions() as db, db.begin():
+        user = await db.scalar(select(User).where(User.id == actor.id).with_for_update())
+        if (
+            user is None
+            or user.status != "ACTIVE"
+            or not await db.get(UserRole, (actor.id, "TEACHER"))
+        ):
+            raise Problem(403, "FORBIDDEN", "Недостаточно прав.")
+        previous = await db.scalar(
+            select(Operation).where(
+                Operation.actor_id == actor.id, Operation.request_id == body.request_id
+            )
+        )
+        if previous is not None:
+            if previous.request_digest != digest:
+                raise Problem(409, "IDEMPOTENCY_CONFLICT", "Этот запрос уже использован иначе.")
+            return previous
+        reservation = await db.get(LessonReservation, reservation_id)
+        stored_run = await db.get(EnvironmentRun, run.id)
+        environment = await db.get(Environment, run.environment_id)
+        if (
+            reservation is None
+            or reservation.teacher_id != actor.id
+            or reservation.state != "ACTIVE"
+            or stored_run is None
+            or stored_run.state != "PREPARING"
+            or stored_run.reservation_id != reservation_id
+            or environment is None
+            or environment.owner_teacher_id != actor.id
+        ):
+            raise Problem(409, "RUN_NOT_READY", "Занятие больше не готово к запуску.")
+        if await db.scalar(
+            select(Operation.id).where(
+                Operation.environment_id == environment.id, Operation.state.not_in(TERMINAL)
+            )
+        ):
+            raise Problem(409, "OPERATION_IN_PROGRESS", "Для окружения уже выполняется операция.")
+        operation = Operation(
+            actor_id=actor.id,
+            owner_teacher_id=actor.id,
+            environment_id=environment.id,
+            kind="LESSON_START",
+            request_id=body.request_id,
+            request_digest=digest,
+            expected_version=environment.version,
+            state="WAITING_NODE",
+        )
+        db.add(operation)
+        await db.flush()
+        event(db, operation)
+        audit(
+            db,
+            request,
+            actor.id,
+            "lesson.start_requested",
+            operation.id,
+            reservation_id=str(reservation_id),
+            run_id=str(run.id),
+        )
+        return operation

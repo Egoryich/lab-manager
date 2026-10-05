@@ -18,6 +18,7 @@ from lab_manager.catalog_models import (
 from lab_manager.lesson_command_queue import queue_lxc_create_commands
 from lab_manager.lesson_commands import LessonCommandRejected
 from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
+from lab_manager.lesson_start_worker import process as queue_ready_lesson
 from lab_manager.models import Group, GroupMember, User
 from lab_manager.network_models import NetworkSegmentAllocation, NodeNetworkPool
 from lab_manager.node_command_models import NodeCommand
@@ -127,6 +128,57 @@ async def test_lxc_commands_wait_for_segments_and_queue_once(app, seed):
             "BEGIN OPENSSH PRIVATE KEY" not in credential.private_key_ciphertext
             for credential in credentials
         )
+
+
+async def test_teacher_start_request_queues_after_network_applied(
+    app, seed, client_factory, session
+):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    async with app.state.sessions() as db, db.begin():
+        template = await db.scalar(select(TemplateVersion).where(TemplateVersion.name == "Linux"))
+        template.source_ref = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    request_id = uuid.uuid4()
+    async with client_factory() as client:
+        await session(client, teacher)
+        first = await client.post(
+            f"/api/reservations/{reservation.id}/start", json={"request_id": str(request_id)}
+        )
+        assert first.status_code == 202, first.text
+        second = await client.post(
+            f"/api/reservations/{reservation.id}/start", json={"request_id": str(request_id)}
+        )
+        assert second.status_code == 202 and second.json()["id"] == first.json()["id"]
+    assert await queue_ready_lesson(app.state.sessions, app.state.codec) is False
+    async with app.state.sessions() as db, db.begin():
+        for segment in await db.scalars(
+            select(NetworkSegmentAllocation).where(
+                NetworkSegmentAllocation.environment_id == environment_id
+            )
+        ):
+            segment.state = "APPLIED"
+    assert await queue_ready_lesson(app.state.sessions, app.state.codec) is True
+    assert await queue_ready_lesson(app.state.sessions, app.state.codec) is False
+    async with app.state.sessions() as db:
+        commands = list(await db.scalars(select(NodeCommand)))
+        assert len(commands) == 2
+        assert {command.parent_operation_id for command in commands} == {
+            uuid.UUID(first.json()["id"])
+        }
 
 
 async def setup(app, teacher_ids, *, network_mode="ISOLATED"):
