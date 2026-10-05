@@ -2,8 +2,7 @@ import pytest
 from lab_manager.catalog_models import Environment, ProfileVersion
 from lab_manager.lesson_network import claim_run_networks
 from lab_manager.runtime_models import Runtime
-
-from tests.integration.test_network_allocations import setup
+from test_network_allocations import setup
 
 pytestmark = pytest.mark.integration
 

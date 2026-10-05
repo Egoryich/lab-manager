@@ -46,6 +46,7 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
   const cache = useQueryClient();
   const key = ['operations', environment.id];
   const [requestId, setRequestId] = useState(crypto.randomUUID());
+  const [startRequestId, setStartRequestId] = useState(crypto.randomUUID());
   const reservations = useQuery({
     queryKey: ['reservations', environment.id],
     queryFn: async () =>
@@ -129,6 +130,21 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
         }),
       ),
     onSuccess: () => cache.invalidateQueries({ queryKey: ['reservations', environment.id] }),
+  });
+  const startLesson = useMutation({
+    mutationFn: async (reservationId: string) =>
+      unwrap(
+        await api.POST('/api/reservations/{reservation_id}/start', {
+          params: { path: { reservation_id: reservationId } },
+          body: { request_id: startRequestId },
+        }),
+      ),
+    onSuccess: (startedOperation) => {
+      cache.setQueryData(key, [startedOperation]);
+      setStartRequestId(crypto.randomUUID());
+      cache.invalidateQueries({ queryKey: ['reservations', environment.id] });
+    },
+    onError: () => cache.invalidateQueries({ queryKey: key }),
   });
   const operation = operations.data?.[0];
   const pending = operation && !terminal.has(operation.state);
@@ -256,19 +272,29 @@ export function EnvironmentValidation({ environment }: { environment: Environmen
                 {reservation.state === 'RESERVED' ? 'забронировано' : 'идёт занятие'}
               </p>
               {reservation.state === 'RESERVED' && (
-                <button
-                  type="button"
-                  disabled={cancel.isPending}
-                  onClick={() => cancel.mutate(reservation.id)}
-                >
-                  Отменить бронь
-                </button>
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    disabled={startLesson.isPending || !!pending}
+                    onClick={() => startLesson.mutate(reservation.id)}
+                  >
+                    Начать занятие
+                  </button>
+                  <button
+                    type="button"
+                    disabled={cancel.isPending || startLesson.isPending}
+                    onClick={() => cancel.mutate(reservation.id)}
+                  >
+                    Отменить бронь
+                  </button>
+                </div>
               )}
             </div>
           ))}
         </div>
       ) : null}
       {cancel.error && <p className="error" role="alert">{cancel.error.message}</p>}
+      {startLesson.error && <p className="error" role="alert">{startLesson.error.message}</p>}
     </div>
   );
 }
