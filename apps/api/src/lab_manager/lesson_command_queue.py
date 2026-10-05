@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from lab_manager.catalog_models import ProfileVersion, TemplateVersion
 from lab_manager.lesson_commands import LessonCommandRejected, create_lxc_payload
@@ -31,6 +31,7 @@ async def queue_lxc_create_commands(sessions, *, run_id: uuid.UUID, operation_id
         )
         operation = await db.get(Operation, operation_id)
         reservation = await db.get(LessonReservation, run.reservation_id) if run else None
+        now = await db.scalar(select(func.clock_timestamp()))
         if (
             run is None
             or run.state != "PREPARING"
@@ -38,6 +39,7 @@ async def queue_lxc_create_commands(sessions, *, run_id: uuid.UUID, operation_id
             or operation.environment_id != run.environment_id
             or reservation is None
             or reservation.state != "ACTIVE"
+            or reservation.ends_at <= now
             or reservation.environment_id != run.environment_id
             or reservation.node_id != run.node_id
             or operation.owner_teacher_id != reservation.teacher_id

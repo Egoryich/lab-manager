@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from lab_manager.audit import audit
 from lab_manager.catalog import configuration, estimate
-from lab_manager.catalog_models import Environment
+from lab_manager.catalog_models import Environment, ProfileVersion, TemplateVersion
 from lab_manager.catalog_schemas import EnvironmentCreate, MachineSizing
 from lab_manager.dependencies import Actor, Problem, require_role
 from lab_manager.lesson_preview import demand_from_total
@@ -212,6 +212,19 @@ async def start_reserved_lesson(
             if previous.request_digest != digest:
                 raise Problem(409, "IDEMPOTENCY_CONFLICT", "Этот запрос уже использован иначе.")
             return previous
+        reservation = await db.get(LessonReservation, reservation_id)
+        environment = await db.get(Environment, reservation.environment_id) if reservation else None
+        if reservation is None or environment is None or environment.owner_teacher_id != actor.id:
+            raise Problem(404, "RESERVATION_NOT_FOUND", "Бронь не найдена.")
+        for profile_id in (environment.profile_version_id, environment.demo_profile_version_id):
+            profile = await db.get(ProfileVersion, profile_id)
+            template = (
+                await db.get(TemplateVersion, profile.template_version_id) if profile else None
+            )
+            if template is None or template.runtime_kind != "LXC" or not template.source_ref:
+                raise Problem(
+                    409, "LXC_TEMPLATE_NOT_READY", "Для первого запуска нужен образ Debian LXC."
+                )
     try:
         run = await prepare_reserved_run(
             request.app.state.sessions, reservation_id=reservation_id, teacher_id=actor.id
