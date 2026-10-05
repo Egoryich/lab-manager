@@ -20,7 +20,9 @@ def upgrade():
         sa.Column("public_key", sa.String(256), nullable=False),
         sa.Column("private_key_ciphertext", sa.String(4096), nullable=False),
         sa.Column("host_key", sa.String(2048), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["runtime_id"], ["runtimes.id"]),
     )
 
