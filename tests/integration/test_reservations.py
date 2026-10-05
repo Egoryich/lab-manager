@@ -56,9 +56,6 @@ async def test_lxc_commands_wait_for_segments_and_queue_once(app, seed):
     node_id, environments = await setup(app, [teacher.id])
     environment_id = environments[0]
     await ready_roster(app, teacher.id, student.id, environment_id)
-    async with app.state.sessions() as db, db.begin():
-        template = await db.scalar(select(TemplateVersion).where(TemplateVersion.name == "Linux"))
-        template.source_ref = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
     starts_at = datetime.now(UTC) + timedelta(minutes=10)
     reservation = await reserve_lesson(
         app.state.sessions,
@@ -183,9 +180,6 @@ async def test_teacher_start_request_queues_after_network_applied(
     node_id, environments = await setup(app, [teacher.id])
     environment_id = environments[0]
     await ready_roster(app, teacher.id, student.id, environment_id)
-    async with app.state.sessions() as db, db.begin():
-        template = await db.scalar(select(TemplateVersion).where(TemplateVersion.name == "Linux"))
-        template.source_ref = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
     starts_at = datetime.now(UTC) + timedelta(minutes=10)
     reservation = await reserve_lesson(
         app.state.sessions,
@@ -285,6 +279,7 @@ async def setup(app, teacher_ids, *, network_mode="ISOLATED"):
         template = TemplateVersion(
             name="Linux",
             version_label="v1",
+            source_ref="local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst",
             runtime_kind="LXC",
             guest_family="LINUX",
             created_by=teacher_ids[0],
