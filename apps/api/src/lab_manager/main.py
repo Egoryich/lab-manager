@@ -21,6 +21,7 @@ from lab_manager import (
     node_policies,
     nodes,
     operations,
+    runtime_access,
 )
 from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
@@ -151,4 +152,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(node_policies.router, prefix="/api", responses=errors)
     app.include_router(lesson_preview.router, prefix="/api", responses=errors)
     app.include_router(lesson_booking.router, prefix="/api", responses=errors)
+    app.include_router(runtime_access.router, prefix="/api", responses=errors)
     return app

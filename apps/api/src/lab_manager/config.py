@@ -1,3 +1,4 @@
+import re
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     session_hours: int = 12
     password_hash_concurrency: int = Field(default=2, ge=1, le=4)
     node_config: str | None = None
+    guacamole_json_secret: SecretStr | None = None
 
     @model_validator(mode="after")
     def validate_security(self):
@@ -35,6 +37,10 @@ class Settings(BaseSettings):
             raise ValueError("production requires HTTPS")
         if not 1 <= self.session_hours <= 24:
             raise ValueError("session_hours must be between 1 and 24")
+        if self.guacamole_json_secret is not None and not re.fullmatch(
+            r"[0-9a-fA-F]{32}", self.guacamole_json_secret.get_secret_value()
+        ):
+            raise ValueError("guacamole_json_secret must be 16 random bytes in hex")
         return self
 
     @property
