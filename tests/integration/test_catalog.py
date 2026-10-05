@@ -20,9 +20,17 @@ async def catalog_setup(admin, teacher_id, *, ram_limit=65536):
                 "version_label": "test-1",
                 "runtime_kind": kind,
                 "guest_family": "LINUX",
+                "source_ref": "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+                if kind == "LXC"
+                else None,
             },
         )
         assert template.status_code == 201, template.text
+        if kind == "LXC":
+            assert (
+                template.json()["source_ref"]
+                == "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+            )
         profile = await admin.post(
             "/api/admin/profile-versions",
             json={

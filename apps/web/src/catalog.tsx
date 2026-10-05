@@ -94,6 +94,7 @@ export function CatalogAdmin() {
           body: {
             name: str(d, 'name'),
             version_label: str(d, 'version_label'),
+            source_ref: str(d, 'source_ref') || null,
             runtime_kind: str(d, 'runtime_kind') as 'LXC' | 'QEMU',
             guest_family: str(d, 'guest_family') as 'LINUX' | 'WINDOWS',
           },
@@ -166,8 +167,8 @@ export function CatalogAdmin() {
         </div>
       </header>
       <p className="footnote">
-        Сейчас это подготовка конфигураций. Импорт образов и запуск машин на Proxmox ещё не
-        подключены. Каталог показывает первые 100 записей.
+        Каталог показывает первые 100 записей. Для запуска LXC нужен установленный на Proxmox
+        Debian-шаблон.
       </p>
       {notice && (
         <p role="status" className="success">
@@ -189,6 +190,14 @@ export function CatalogAdmin() {
             <label>
               Версия образа
               <input name="version_label" required maxLength={64} placeholder="2026.09" />
+            </label>
+            <label>
+              Образ на Proxmox для LXC
+              <input
+                name="source_ref"
+                maxLength={160}
+                placeholder="local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+              />
             </label>
             <div className="field-grid">
               <label>
@@ -215,7 +224,9 @@ export function CatalogAdmin() {
             {templates.data?.map((t) => (
               <li key={t.id}>
                 {t.name} · {t.version_label}{' '}
-                <small>{t.runtime_kind} · образ на сервере ещё не проверен</small>
+                <small>
+                  {t.runtime_kind} · {t.source_ref || 'образ не указан'}
+                </small>
               </li>
             ))}
           </ul>

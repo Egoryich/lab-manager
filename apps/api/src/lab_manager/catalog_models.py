@@ -29,6 +29,7 @@ class TemplateVersion(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(120))
     version_label: Mapped[str] = mapped_column(String(64))
+    source_ref: Mapped[str | None] = mapped_column(String(160))
     runtime_kind: Mapped[str] = mapped_column(String(8))
     guest_family: Mapped[str] = mapped_column(String(16))
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))

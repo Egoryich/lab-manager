@@ -1,3 +1,4 @@
+import re
 import uuid
 from typing import Literal
 
@@ -39,6 +40,7 @@ LimitKey = Literal[
 
 class TemplateCreate(GroupCreate):
     version_label: str = Field(min_length=1, max_length=64)
+    source_ref: str | None = Field(default=None, max_length=160)
     runtime_kind: Literal["LXC", "QEMU"]
     guest_family: Literal["LINUX", "WINDOWS"]
 
@@ -46,6 +48,15 @@ class TemplateCreate(GroupCreate):
     def compatible(self):
         if self.runtime_kind == "LXC" and self.guest_family != "LINUX":
             raise ValueError("Windows requires QEMU")
+        if (
+            self.source_ref is not None
+            and self.runtime_kind == "LXC"
+            and not re.fullmatch(
+                r"[A-Za-z][A-Za-z0-9_.-]{0,63}:vztmpl/debian-[A-Za-z0-9_.+-]+\.tar\.(?:zst|gz|xz)",
+                self.source_ref,
+            )
+        ):
+            raise ValueError("LXC source must be a Debian Proxmox template volume")
         return self
 
 

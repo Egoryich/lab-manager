@@ -6339,6 +6339,18 @@
             "minLength": 1,
             "title": "Version Label"
           },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
+          },
           "runtime_kind": {
             "type": "string",
             "enum": [
@@ -6379,6 +6391,18 @@
             "maxLength": 64,
             "minLength": 1,
             "title": "Version Label"
+          },
+          "source_ref": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 160
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Ref"
           },
           "runtime_kind": {
             "type": "string",

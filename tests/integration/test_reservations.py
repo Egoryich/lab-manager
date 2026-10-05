@@ -15,12 +15,16 @@ from lab_manager.catalog_models import (
     TeacherPolicyAssignment,
     TemplateVersion,
 )
+from lab_manager.lesson_command_queue import queue_lxc_create_commands
+from lab_manager.lesson_commands import LessonCommandRejected
 from lab_manager.lesson_runtime import RunPreparationRejected, prepare_reserved_run
 from lab_manager.models import Group, GroupMember, User
 from lab_manager.network_models import NetworkSegmentAllocation, NodeNetworkPool
+from lab_manager.node_command_models import NodeCommand
 from lab_manager.node_segment_worker import process as apply_segment
 from lab_manager.node_segments import NodeSegmentError
 from lab_manager.nodes import NodeObservation
+from lab_manager.operation_models import Operation
 from lab_manager.reservation_models import (
     EnvironmentDiskAllocation,
     LessonReservation,
@@ -35,12 +39,94 @@ from lab_manager.runtime_models import (
     RunRuntime,
     Runtime,
     RuntimeDisk,
+    RuntimeSshCredential,
 )
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.attributes import flag_modified
 
 pytestmark = pytest.mark.integration
+
+
+async def test_lxc_commands_wait_for_segments_and_queue_once(app, seed):
+    teacher = await seed("TEACHER")
+    student = await seed("STUDENT")
+    node_id, environments = await setup(app, [teacher.id])
+    environment_id = environments[0]
+    await ready_roster(app, teacher.id, student.id, environment_id)
+    async with app.state.sessions() as db, db.begin():
+        template = await db.scalar(select(TemplateVersion).where(TemplateVersion.name == "Linux"))
+        template.source_ref = "local:vztmpl/debian-13-standard_13.6-1_amd64.tar.zst"
+    starts_at = datetime.now(UTC) + timedelta(minutes=10)
+    reservation = await reserve_lesson(
+        app.state.sessions,
+        node_id=node_id,
+        environment_id=environment_id,
+        teacher_id=teacher.id,
+        request_id=uuid.uuid4(),
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(hours=1),
+        demand=ResourceDemand(memory_mib=1024, cpu_millicredits=2000, disk_bytes=20 * GIB),
+    )
+    run = await prepare_reserved_run(
+        app.state.sessions, reservation_id=reservation.id, teacher_id=teacher.id
+    )
+    await bind_prepared_runtimes(app.state.sessions, run_id=run.id)
+    operation = Operation(
+        actor_id=teacher.id,
+        owner_teacher_id=teacher.id,
+        environment_id=environment_id,
+        kind="LESSON_START",
+        request_id=uuid.uuid4(),
+        request_digest="0" * 64,
+        expected_version=1,
+        state="WAITING_NODE",
+    )
+    async with app.state.sessions() as db, db.begin():
+        db.add(operation)
+        await db.flush()
+        operation_id = operation.id
+    with pytest.raises(LessonCommandRejected):
+        await queue_lxc_create_commands(
+            app.state.sessions,
+            run_id=run.id,
+            operation_id=operation_id,
+            codec=app.state.codec,
+        )
+    async with app.state.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(NodeCommand)) == 0
+        assert await db.scalar(select(func.count()).select_from(RuntimeSshCredential)) == 0
+    async with app.state.sessions() as db, db.begin():
+        for segment in await db.scalars(
+            select(NetworkSegmentAllocation).where(
+                NetworkSegmentAllocation.environment_id == environment_id
+            )
+        ):
+            segment.state = "APPLIED"
+    queued = await queue_lxc_create_commands(
+        app.state.sessions,
+        run_id=run.id,
+        operation_id=operation_id,
+        codec=app.state.codec,
+    )
+    repeated = await queue_lxc_create_commands(
+        app.state.sessions,
+        run_id=run.id,
+        operation_id=operation_id,
+        codec=app.state.codec,
+    )
+    assert {command.id for command in queued} == {command.id for command in repeated}
+    assert len(queued) == 2
+    async with app.state.sessions() as db:
+        commands = list(await db.scalars(select(NodeCommand)))
+        credentials = list(await db.scalars(select(RuntimeSshCredential)))
+        assert len(commands) == len(credentials) == 2
+        assert all(command.state == "QUEUED" for command in commands)
+        assert all(command.payload["spec"]["address"] for command in commands)
+        assert all(
+            "BEGIN OPENSSH PRIVATE KEY" not in credential.private_key_ciphertext
+            for credential in credentials
+        )
 
 
 async def setup(app, teacher_ids, *, network_mode="ISOLATED"):

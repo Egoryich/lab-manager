@@ -1229,6 +1229,8 @@ export interface components {
             name: string;
             /** Version Label */
             version_label: string;
+            /** Source Ref */
+            source_ref?: string | null;
             /**
              * Runtime Kind
              * @enum {string}
@@ -1246,6 +1248,8 @@ export interface components {
             name: string;
             /** Version Label */
             version_label: string;
+            /** Source Ref */
+            source_ref?: string | null;
             /**
              * Runtime Kind
              * @enum {string}
