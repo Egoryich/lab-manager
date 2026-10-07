@@ -183,6 +183,36 @@ class SnapshotService:
                             else "400 Bad Request"
                         )
                         body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(
+                (b"PUT /v1/segments/", b"DELETE /v1/segments/")
+            ) and request_line.endswith(b"/gateway HTTP/1.1"):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        method, target, _ = request_line.split(b" ")
+                        allocation_id = uuid.UUID(
+                            target.removeprefix(b"/v1/segments/")
+                            .removesuffix(b"/gateway")
+                            .decode("ascii")
+                        )
+                        method_name = "prepare_gateway" if method == b"PUT" else "close_gateway"
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(
+                                getattr(self.segment_client, method_name), allocation_id
+                            )
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "404 Not Found"
+                            if str(error) == "SEGMENT_NOT_FOUND"
+                            else "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
             elif request_line.startswith(b"GET /v1/commands/") and request_line.endswith(
                 b" HTTP/1.1"
             ):

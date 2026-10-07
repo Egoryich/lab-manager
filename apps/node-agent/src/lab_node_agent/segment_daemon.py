@@ -24,7 +24,7 @@ def unique_object(pairs):
 
 
 def dispatch(request: bytes, manager: SegmentManager) -> dict:
-    """Only create and inspect owned, down lab bridges; never accept shell text."""
+    """Manage only owned lab bridges and their gateways; never accept shell text."""
     if not 0 < len(request) <= MAX_REQUEST:
         raise SegmentError("INVALID_SEGMENT_REQUEST")
     try:
@@ -53,6 +53,19 @@ def dispatch(request: bytes, manager: SegmentManager) -> dict:
             if link.get("master"):
                 raise SegmentError("SEGMENT_BRIDGE_INVALID")
             return {**record, "state": "ACTIVE" if "UP" in link.get("flags", []) else "CREATED"}
+        if action in ("prepare_gateway", "close_gateway") and set(value) == {
+            "action",
+            "allocation_id",
+        }:
+            allocation_id = uuid.UUID(value["allocation_id"])
+            record = manager.read().get(str(allocation_id))
+            if record is None:
+                raise SegmentError("SEGMENT_NOT_FOUND")
+            if action == "prepare_gateway":
+                gateway = manager.prepare_gateway(allocation_id)
+                return {**record, "gateway": gateway, "state": "GATEWAY_PREPARED"}
+            manager.close_gateway(allocation_id)
+            return {**record, "state": "CREATED"}
     except (TypeError, ValueError, KeyError) as error:
         raise SegmentError("INVALID_SEGMENT_REQUEST") from error
     raise SegmentError("INVALID_SEGMENT_REQUEST")

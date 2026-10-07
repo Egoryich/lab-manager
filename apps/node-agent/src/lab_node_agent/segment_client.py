@@ -81,3 +81,23 @@ class SegmentClient:
         ):
             raise SegmentError("SEGMENT_HELPER_MISMATCH")
         return result
+
+    def prepare_gateway(self, allocation_id: uuid.UUID) -> dict:
+        current = self.get(allocation_id)
+        result = self._exchange({"action": "prepare_gateway", "allocation_id": str(allocation_id)})
+        spec = SegmentSpec.parse(
+            {field: current[field] for field in ("allocation_id", "mode", "cidr")}
+        )
+        if result != {**spec.record(), "gateway": spec.gateway, "state": "GATEWAY_PREPARED"}:
+            raise SegmentError("SEGMENT_HELPER_MISMATCH")
+        return result
+
+    def close_gateway(self, allocation_id: uuid.UUID) -> dict:
+        current = self.get(allocation_id)
+        result = self._exchange({"action": "close_gateway", "allocation_id": str(allocation_id)})
+        spec = SegmentSpec.parse(
+            {field: current[field] for field in ("allocation_id", "mode", "cidr")}
+        )
+        if result != {**spec.record(), "state": "CREATED"}:
+            raise SegmentError("SEGMENT_HELPER_MISMATCH")
+        return result

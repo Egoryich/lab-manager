@@ -21,7 +21,19 @@ class FakeIP:
             self.links[args[3]] = {"linkinfo": {"info_kind": "bridge"}, "flags": []}
             return ""
         if args[:3] == ("link", "set", "dev"):
-            self.links[args[3]]["ifalias"] = args[5]
+            if args[4] == "alias":
+                self.links[args[3]]["ifalias"] = args[5]
+            elif args[4] in ("up", "down"):
+                self.links[args[3]]["flags"] = ["UP"] if args[4] == "up" else []
+            else:
+                raise AssertionError(args)
+            return ""
+        if args[:2] == ("address", "add"):
+            local, prefix = args[2].split("/")
+            self.addresses[args[4]] = [{"family": "inet", "local": local, "prefixlen": int(prefix)}]
+            return ""
+        if args[:2] == ("address", "del"):
+            self.addresses[args[4]] = []
             return ""
         if args[:3] == ("link", "delete", "dev"):
             del self.links[args[3]]
@@ -90,6 +102,41 @@ def test_up_bridge_prevents_delete(tmp_path):
     assert segment.bridge in fake.links
 
 
+def test_prepare_and_close_gateway_is_idempotent_and_keeps_owned_bridge(tmp_path):
+    fake = FakeIP()
+    subject = manager(tmp_path, fake)
+    segment = spec()
+    subject.create(segment)
+    assert subject.prepare_gateway(segment.allocation_id) == "10.70.1.1/30"
+    assert subject.prepare_gateway(segment.allocation_id) == "10.70.1.1/30"
+    assert fake.links[segment.bridge]["flags"] == ["UP"]
+    assert fake.addresses[segment.bridge] == [
+        {"family": "inet", "local": "10.70.1.1", "prefixlen": 30}
+    ]
+    assert subject.close_gateway(segment.allocation_id)
+    assert subject.close_gateway(segment.allocation_id)
+    assert fake.links[segment.bridge]["flags"] == []
+    assert fake.addresses[segment.bridge] == []
+    assert segment.bridge in fake.links
+    assert len([call for call in fake.calls if call[:2] == ("address", "add")]) == 1
+
+
+def test_prepare_rejects_foreign_address_and_close_rejects_attached_port(tmp_path):
+    fake = FakeIP()
+    subject = manager(tmp_path, fake)
+    segment = spec()
+    subject.create(segment)
+    fake.addresses[segment.bridge] = [{"family": "inet", "local": "10.70.1.2", "prefixlen": 30}]
+    with pytest.raises(SegmentError, match="BRIDGE_ADDRESS_CONFLICT"):
+        subject.prepare_gateway(segment.allocation_id)
+    fake.addresses[segment.bridge] = []
+    fake.ports[segment.bridge] = [{"ifname": "veth123"}]
+    with pytest.raises(SegmentError, match="BRIDGE_IN_USE"):
+        subject.prepare_gateway(segment.allocation_id)
+    with pytest.raises(SegmentError, match="BRIDGE_IN_USE"):
+        subject.close_gateway(segment.allocation_id)
+
+
 def test_corrupt_state_blocks_mutations(tmp_path):
     fake = FakeIP()
     subject = manager(tmp_path, fake)
@@ -109,6 +156,15 @@ def test_short_bridge_name_collision_is_rejected(tmp_path, monkeypatch):
     subject.create(first)
     with pytest.raises(SegmentError, match="BRIDGE_NAME_COLLISION"):
         subject.create(second)
+
+
+def test_segment_cidr_overlap_is_rejected_before_creating_second_bridge(tmp_path):
+    fake = FakeIP()
+    subject = manager(tmp_path, fake)
+    subject.create(spec(cidr="10.70.8.0/29"))
+    with pytest.raises(SegmentError, match="SEGMENT_CIDR_COLLISION"):
+        subject.create(spec(cidr="10.70.8.0/30"))
+    assert len(fake.links) == 1
 
 
 def test_bridge_name_fits_proxmox_limit():
@@ -142,7 +198,7 @@ def test_startup_restores_missing_bridge_without_changing_live_one(tmp_path):
     fake = FakeIP()
     subject = manager(tmp_path, fake)
     missing = spec()
-    live = spec()
+    live = spec(cidr="10.70.1.4/30")
     subject.write(
         {
             str(missing.allocation_id): missing.record(),
@@ -172,6 +228,7 @@ def test_startup_restores_missing_bridge_without_changing_live_one(tmp_path):
         {"allocation_id": str(uuid.uuid4()), "mode": "INVALID", "cidr": "10.70.1.0/30"},
         {"allocation_id": str(uuid.uuid4()), "mode": "ISOLATED", "cidr": "10.70.1.1/30"},
         {"allocation_id": str(uuid.uuid4()), "mode": "ISOLATED", "cidr": "100.64.0.0/30"},
+        {"allocation_id": str(uuid.uuid4()), "mode": "ISOLATED", "cidr": "192.168.0.0/30"},
     ],
 )
 def test_invalid_specs_are_rejected(payload):

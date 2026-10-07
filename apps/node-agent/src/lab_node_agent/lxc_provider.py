@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 
 from lab_node_agent.proxmox import ProxmoxConfig
-from lab_node_agent.segments import PRIVATE_POOLS
+from lab_node_agent.segments import GUEST_POOL
 
 STORAGE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
 POOL = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
@@ -68,7 +68,7 @@ class CreateLxc:
                 subnet.prefixlen <= 30
                 and address in subnet
                 and address not in (subnet.network_address, subnet.broadcast_address, gateway)
-                and any(subnet.subnet_of(pool) for pool in PRIVATE_POOLS)
+                and subnet.subnet_of(GUEST_POOL)
             )
         except (TypeError, ValueError):
             valid_address = False

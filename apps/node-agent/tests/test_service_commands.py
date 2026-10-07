@@ -130,6 +130,14 @@ class Segments:
         self.calls.append(("get", allocation_id))
         return {"allocation_id": str(allocation_id), "bridge": "lmbr123456", "state": "CREATED"}
 
+    def prepare_gateway(self, allocation_id):
+        self.calls.append(("prepare_gateway", allocation_id))
+        return {"allocation_id": str(allocation_id), "gateway": "10.70.1.1/29"}
+
+    def close_gateway(self, allocation_id):
+        self.calls.append(("close_gateway", allocation_id))
+        return {"allocation_id": str(allocation_id), "state": "CREATED"}
+
 
 def test_segment_http_is_disabled_without_local_helper_and_uses_bounded_body():
     segments = Segments()
@@ -153,6 +161,13 @@ def test_segment_http_is_disabled_without_local_helper_and_uses_bounded_body():
     get = f"GET /v1/segments/{allocation_id} HTTP/1.1\r\n\r\n".encode()
     assert request(service(segment_client=segments), get).startswith(b"HTTP/1.1 200 OK")
     assert segments.calls[-1] == ("get", allocation_id)
+    prepare = f"PUT /v1/segments/{allocation_id}/gateway HTTP/1.1\r\n\r\n".encode()
+    close = f"DELETE /v1/segments/{allocation_id}/gateway HTTP/1.1\r\n\r\n".encode()
+    assert request(service(segment_client=segments), prepare).startswith(b"HTTP/1.1 200 OK")
+    assert segments.calls[-1] == ("prepare_gateway", allocation_id)
+    assert request(service(segment_client=segments), close).startswith(b"HTTP/1.1 200 OK")
+    assert segments.calls[-1] == ("close_gateway", allocation_id)
+    assert request(service(), prepare).startswith(b"HTTP/1.1 503 Service Unavailable")
     oversized = request(
         service(segment_client=segments),
         b"POST /v1/segments HTTP/1.1\r\nContent-Length: 16385\r\n"

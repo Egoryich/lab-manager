@@ -1,4 +1,4 @@
-"""Local lifecycle for empty Lab Manager bridges; never attaches guest ports."""
+"""Local lifecycle for owned Lab Manager bridges; never attaches guest ports."""
 
 import argparse
 import hashlib
@@ -15,9 +15,7 @@ from pathlib import Path
 from lab_node_agent.network_policy import SegmentMode
 
 STATE_DIR = Path("/var/lib/lab-manager-node/segments")
-PRIVATE_POOLS = tuple(
-    ipaddress.ip_network(cidr) for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
-)
+GUEST_POOL = ipaddress.ip_network("10.70.0.0/16")
 
 
 class SegmentError(Exception):
@@ -44,7 +42,7 @@ class SegmentSpec:
             raise SegmentError("INVALID_SEGMENT_SPEC")
         if (
             not isinstance(network, ipaddress.IPv4Network)
-            or not any(network.subnet_of(pool) for pool in PRIVATE_POOLS)
+            or not network.subnet_of(GUEST_POOL)
             or not 16 <= network.prefixlen <= 30
         ):
             raise SegmentError("INVALID_SEGMENT_CIDR")
@@ -64,6 +62,11 @@ class SegmentSpec:
     @property
     def alias(self) -> str:
         return "lab-manager:" + str(self.allocation_id)
+
+    @property
+    def gateway(self) -> str:
+        network = ipaddress.ip_network(self.cidr)
+        return f"{network.network_address + 1}/{network.prefixlen}"
 
     def record(self) -> dict[str, str]:
         return {
@@ -171,6 +174,12 @@ class SegmentManager:
         current = records.get(key)
         if current is not None and current != spec.record():
             raise SegmentError("SEGMENT_SPEC_CONFLICT")
+        if any(
+            allocation != key
+            and ipaddress.ip_network(record["cidr"]).overlaps(ipaddress.ip_network(spec.cidr))
+            for allocation, record in records.items()
+        ):
+            raise SegmentError("SEGMENT_CIDR_COLLISION")
         if current is None:
             if self.link_exists(spec.bridge):
                 raise SegmentError("BRIDGE_ALREADY_EXISTS")
@@ -183,6 +192,85 @@ class SegmentManager:
         self.command("link", "set", "dev", spec.bridge, "alias", spec.alias)
         self.link(spec)
         return spec.bridge
+
+    def _existing(self, allocation_id: uuid.UUID) -> SegmentSpec:
+        record = self.read().get(str(allocation_id))
+        if record is None:
+            raise SegmentError("SEGMENT_NOT_FOUND")
+        spec = SegmentSpec.parse(
+            {field: record[field] for field in ("allocation_id", "mode", "cidr")}
+        )
+        link = self.link(spec)
+        if link is None or link.get("master"):
+            raise SegmentError("SEGMENT_BRIDGE_INVALID")
+        return spec
+
+    def _address(self, spec: SegmentSpec) -> list[dict]:
+        try:
+            rows = json.loads(self.command("-j", "address", "show", "dev", spec.bridge))
+        except ValueError as error:
+            raise SegmentError("BRIDGE_INSPECTION_FAILED") from error
+        if (
+            not isinstance(rows, list)
+            or len(rows) != 1
+            or not isinstance(rows[0], dict)
+            or not isinstance(rows[0].get("addr_info"), list)
+        ):
+            raise SegmentError("BRIDGE_INSPECTION_FAILED")
+        addresses = rows[0]["addr_info"]
+        if any(not isinstance(item, dict) for item in addresses):
+            raise SegmentError("BRIDGE_INSPECTION_FAILED")
+        return [item for item in addresses if item.get("family") == "inet"]
+
+    @staticmethod
+    def _check_gateway_address(spec: SegmentSpec, addresses: list[dict]) -> None:
+        expected, prefix = spec.gateway.split("/")
+        if addresses and (
+            len(addresses) != 1
+            or addresses[0].get("local") != expected
+            or addresses[0].get("prefixlen") != int(prefix)
+        ):
+            raise SegmentError("BRIDGE_ADDRESS_CONFLICT")
+
+    def _no_ports(self, spec: SegmentSpec) -> None:
+        try:
+            ports = json.loads(self.command("-j", "link", "show", "master", spec.bridge))
+        except ValueError as error:
+            raise SegmentError("BRIDGE_INSPECTION_FAILED") from error
+        if not isinstance(ports, list):
+            raise SegmentError("BRIDGE_INSPECTION_FAILED")
+        if ports:
+            raise SegmentError("BRIDGE_IN_USE")
+
+    def prepare_gateway(self, allocation_id: uuid.UUID) -> str:
+        """Put an empty bridge on its own gateway; the deny-only guard still blocks traffic."""
+        spec = self._existing(allocation_id)
+        link = self.link(spec)
+        addresses = self._address(spec)
+        self._check_gateway_address(spec, addresses)
+        if "UP" in link.get("flags", []):
+            if not addresses:
+                raise SegmentError("BRIDGE_ADDRESS_CONFLICT")
+            return spec.gateway
+        self._no_ports(spec)
+        if not addresses:
+            self.command("address", "add", spec.gateway, "dev", spec.bridge)
+        self.command("link", "set", "dev", spec.bridge, "up")
+        if "UP" not in self.link(spec).get("flags", []):
+            raise SegmentError("BRIDGE_ACTIVATION_FAILED")
+        return spec.gateway
+
+    def close_gateway(self, allocation_id: uuid.UUID) -> bool:
+        """Remove only this gateway after all guest ports have disappeared."""
+        spec = self._existing(allocation_id)
+        self._no_ports(spec)
+        addresses = self._address(spec)
+        self._check_gateway_address(spec, addresses)
+        if "UP" in self.link(spec).get("flags", []):
+            self.command("link", "set", "dev", spec.bridge, "down")
+        if addresses:
+            self.command("address", "del", spec.gateway, "dev", spec.bridge)
+        return True
 
     def delete(self, allocation_id: uuid.UUID) -> bool:
         records = self.read()
@@ -223,10 +311,12 @@ class SegmentManager:
 def main() -> int:
     import fcntl
 
-    parser = argparse.ArgumentParser(description="Manage empty, down Lab Manager bridges locally")
+    parser = argparse.ArgumentParser(description="Manage owned Lab Manager bridges locally")
     subcommands = parser.add_subparsers(dest="action", required=True)
     subcommands.add_parser("create").add_argument("spec", type=Path)
     subcommands.add_parser("delete").add_argument("allocation_id")
+    subcommands.add_parser("prepare-gateway").add_argument("allocation_id")
+    subcommands.add_parser("close-gateway").add_argument("allocation_id")
     subcommands.add_parser("list")
     args = parser.parse_args()
     if os.geteuid() != 0:
@@ -251,6 +341,11 @@ def main() -> int:
                 print(manager.create(spec))
             elif args.action == "delete":
                 print("DELETED" if manager.delete(uuid.UUID(args.allocation_id)) else "ABSENT")
+            elif args.action == "prepare-gateway":
+                print(manager.prepare_gateway(uuid.UUID(args.allocation_id)))
+            elif args.action == "close-gateway":
+                manager.close_gateway(uuid.UUID(args.allocation_id))
+                print("CLOSED")
             else:
                 print(json.dumps(manager.read(), sort_keys=True))
     except (OSError, ValueError, SegmentError) as error:

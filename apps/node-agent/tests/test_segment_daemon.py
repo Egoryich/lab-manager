@@ -21,6 +21,16 @@ class Manager:
     def link(self, spec):
         return {"ifname": spec.bridge}
 
+    def prepare_gateway(self, allocation_id):
+        record = self.records[str(allocation_id)]
+        return SegmentSpec.parse(
+            {field: record[field] for field in ("allocation_id", "mode", "cidr")}
+        ).gateway
+
+    def close_gateway(self, allocation_id):
+        assert str(allocation_id) in self.records
+        return True
+
 
 def test_segment_helper_accepts_only_typed_create_and_status():
     manager = Manager()
@@ -38,6 +48,18 @@ def test_segment_helper_accepts_only_typed_create_and_status():
     assert (
         dispatch(
             json.dumps({"action": "get", "allocation_id": str(allocation_id)}).encode(), manager
+        )
+        == created
+    )
+    prepared = dispatch(
+        json.dumps({"action": "prepare_gateway", "allocation_id": str(allocation_id)}).encode(),
+        manager,
+    )
+    assert prepared == {**created, "gateway": "10.70.1.1/29", "state": "GATEWAY_PREPARED"}
+    assert (
+        dispatch(
+            json.dumps({"action": "close_gateway", "allocation_id": str(allocation_id)}).encode(),
+            manager,
         )
         == created
     )

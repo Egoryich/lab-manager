@@ -9,6 +9,33 @@ from lab_node_agent.segment_client import SegmentClient
 from lab_node_agent.segments import SegmentSpec
 
 
+def test_gateway_client_checks_exact_owned_response(monkeypatch):
+    allocation_id = uuid.uuid4()
+    spec = SegmentSpec.parse(
+        {"allocation_id": str(allocation_id), "mode": "ISOLATED", "cidr": "10.70.8.0/30"}
+    )
+    client = SegmentClient()
+    requests = []
+
+    def exchange(request):
+        requests.append(request)
+        if request["action"] == "get":
+            return {**spec.record(), "state": "CREATED"}
+        if request["action"] == "prepare_gateway":
+            return {**spec.record(), "gateway": spec.gateway, "state": "GATEWAY_PREPARED"}
+        return {**spec.record(), "state": "CREATED"}
+
+    monkeypatch.setattr(client, "_exchange", exchange)
+    assert client.prepare_gateway(allocation_id)["gateway"] == "10.70.8.1/30"
+    assert client.close_gateway(allocation_id)["state"] == "CREATED"
+    assert [item["action"] for item in requests] == [
+        "get",
+        "prepare_gateway",
+        "get",
+        "close_gateway",
+    ]
+
+
 @pytest.mark.skipif(not hasattr(socket, "AF_UNIX"), reason="Unix sockets required")
 def test_unprivileged_client_exchanges_exact_segment_identity(tmp_path):
     allocation_id = uuid.uuid4()
