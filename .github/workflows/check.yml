@@ -15,9 +15,13 @@ jobs:
       - run: uv run --project apps/node-agent ruff check apps/node-agent
       - run: uv run --project apps/node-agent ruff format --check apps/node-agent
       - run: uv run --project apps/node-agent pytest apps/node-agent/tests -c apps/node-agent/pyproject.toml -q
-      - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/proxmox-lxc-smoke.sh tools/install-node-network-guard.sh && python3 -m py_compile tools/update-node.py
+      - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/proxmox-lxc-smoke.sh tools/install-node-network-guard.sh tools/install-guacamole-egress.sh && python3 -m py_compile tools/update-node.py
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nftables
       - run: sudo nft --check --file infra/proxmox/lab-network-guard.nft
+      - name: Validate Guacamole egress policy syntax
+        run: |
+          python3 tools/render-guacamole-egress.py 10.60.0.10 bc:24:11:00:00:01 vmbr1 vmbr0 10.70.0.0/16 > /tmp/lab-guacamole-egress.nft
+          sudo nft --check --file /tmp/lab-guacamole-egress.nft
       - name: Validate generated L2 policy syntax
         run: |
           uv run --project apps/node-agent python -c 'from lab_node_agent.network_policy import Segment, SegmentMode, render_l2_policy; print(render_l2_policy((Segment("lmbrgroup1", SegmentMode.GROUP_LAN), Segment("lmbrsolo1", SegmentMode.ISOLATED))))' > /tmp/lab-node-l2.nft

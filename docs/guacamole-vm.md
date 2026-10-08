@@ -1,6 +1,6 @@
 # Подготовка отдельной Guacamole VM
 
-Скрипт [prepare-guacamole-vm.sh](../tools/prepare-guacamole-vm.sh) создаёт выключенную Debian cloud VM на служебном storage Proxmox. Он не изменяет маршруты или firewall, не запускает VM и не устанавливает Guacamole. Это первый шаг до настройки выделенного сетевого выхода, Headscale и [Guacamole Compose](../infra/guacamole/compose.yml). Студенческие LXC остаются на `student-lvm`.
+Скрипт [prepare-guacamole-vm.sh](../tools/prepare-guacamole-vm.sh) создаёт выключенную Debian cloud VM на служебном storage Proxmox. Он не изменяет маршруты или firewall, не запускает VM и не устанавливает Guacamole. Это первый шаг до настройки выделенного сетевого выхода, Headscale и Guacamole Compose. Студенческие LXC остаются на `student-lvm`.
 
 Перед запуском администратор проверяет, что VMID и адрес VM не заняты, bridge принадлежит закрытой инфраструктурной сети, а выбранный storage содержит не менее 20 GiB свободного места. Пример без адресов инсталляции:
 
@@ -15,6 +15,16 @@ bash tools/prepare-guacamole-vm.sh \
 
 Скрипт скачивает официальный Debian 13 generic cloud image и `SHA512SUMS` по HTTPS, проверяет сумму, создаёт диск 16 GiB, 2 vCPU и 2 GiB RAM. Он создаёт отдельный SSH-ключ root Proxmox для первоначального администрирования VM; приватный ключ не выводится. Cloud-init задаёт статический IPv4, шлюз, пользователя `labadmin` и публичный ключ. VM остаётся выключенной с `onboot=0` до проверки сетевого выхода. При ошибке скрипт оставляет частично созданный VMID для осмотра и ничего автоматически не удаляет.
 
-После первого успешного запуска надо проверить `qm config`, доступность VM из Proxmox, отсутствие прямого доступа студентов и доступ Guacamole только через VPS. Затем отдельно включить `onboot=1` и сохранить реально выполненные команды и результаты в этом гайде. До этих проверок это подготовка, а не подтверждённый production gateway.
+Перед первым запуском [установщик сетевых правил](../tools/install-guacamole-egress.sh) берёт IP и MAC из конфигурации выключенной VM, сверяет выделенный bridge, проверяет синтаксис nftables и устанавливает [отдельную systemd-службу](../infra/proxmox/lab-guacamole-egress.service). [Генератор](../tools/render-guacamole-egress.py) разрешает VM выход к учебным машинам только по SSH и обычный выход в Интернет, закрывает инфраструктурные адреса и доступ других узлов к VM через этот bridge. Администратор Proxmox может подключиться к VM по SSH для первоначальной настройки. VM и firewall Proxmox в других сетях не затрагиваются. Пример без адресов инсталляции:
+
+```bash
+bash tools/install-guacamole-egress.sh \
+  '<GUACAMOLE_VMID>' '<DEDICATED_BRIDGE>' '<PUBLIC_UPLINK_BRIDGE>' \
+  '<LAB_ADDRESS_POOL>' \
+  tools/render-guacamole-egress.py \
+  infra/proxmox/lab-guacamole-egress.service
+```
+
+Установщик требует пустой bridge, работающий базовый защитный набор Lab Manager, IPv4 forwarding и выключенную VM с `onboot=0`. Он сохраняет только собственные таблицы nftables. **Политика учебных сегментов пока deny-only**, поэтому её отдельная настройка нужна до подключения Guacamole к LXC. После первого успешного запуска надо проверить `qm config`, доступность VM из Proxmox, отсутствие прямого доступа студентов и доступ Guacamole только через VPS. Затем отдельно включить `onboot=1` и сохранить реально выполненные команды и результаты в этом гайде. До этих проверок это подготовка, а не подтверждённый production gateway.
 
 Источники: [Debian cloud images](https://cloud.debian.org/images/cloud/trixie/latest/), [Proxmox Cloud-Init Support](https://pve.proxmox.com/wiki/Cloud-Init_Support).
