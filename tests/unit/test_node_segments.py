@@ -82,8 +82,53 @@ def test_pinned_segment_create_and_status(tmp_path, monkeypatch):
     connection.response = Response(200, value)
     assert client.status(allocation_id) == value
     assert connection.requests[-1][0:2] == ("GET", f"/v1/segments/{allocation_id}")
+    connection.response = Response(200, {**value, "state": "ACTIVE"})
+    assert client.status(allocation_id)["state"] == "ACTIVE"
     connection.response = Response(404, {"error": "SEGMENT_NOT_FOUND"})
     assert client.status(uuid.uuid4()) is None
     connection.response = Response(202, {**value, "bridge": "vmbr0"})
     with pytest.raises(NodeSegmentError, match="SEGMENT_RESPONSE_MISMATCH"):
         client.create(allocation_id, "ISOLATED", "10.70.1.0/29")
+
+
+def test_pinned_ssh_admission_and_revoke(tmp_path, monkeypatch):
+    for name in ("ca.pem", "client.pem", "client.key"):
+        (tmp_path / name).write_text("test")
+    endpoint = NodeEndpoint(
+        uuid.uuid4(),
+        "Lab",
+        "https://100.64.0.2:18443",
+        "pve",
+        hashlib.sha256(b"server-cert").hexdigest(),
+        tmp_path / "ca.pem",
+        tmp_path / "client.pem",
+        tmp_path / "client.key",
+    )
+    allocation_id = uuid.uuid4()
+    admission = {
+        "allocation_id": str(allocation_id),
+        "runtime_id": str(uuid.uuid4()),
+        "generation": 1,
+        "vmid": 901001,
+        "address": "10.70.1.2",
+        "mac": "BC:24:11:AA:BB:CC",
+    }
+    connection = Connection(
+        Response(200, {**admission, "mac": admission["mac"].lower(), "state": "APPLIED"})
+    )
+    monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: Context())
+    monkeypatch.setattr(
+        "lab_manager.node_segments.http.client.HTTPSConnection",
+        lambda *args, **kwargs: connection,
+    )
+    client = NodeSegmentClient(endpoint)
+    assert client.admit_ssh(admission)["state"] == "APPLIED"
+    assert connection.requests[-1][0:2] == ("POST", "/v1/ssh-admissions")
+    connection.response = Response(200, {"allocation_id": str(allocation_id), "state": "REVOKED"})
+    assert client.revoke_ssh(allocation_id)["state"] == "REVOKED"
+    assert connection.requests[-1][0:2] == ("DELETE", f"/v1/ssh-admissions/{allocation_id}")
+    connection.response = Response(200, {"allocation_id": str(allocation_id), "state": "APPLIED"})
+    with pytest.raises(NodeSegmentError, match="SSH_ADMISSION_RESPONSE_MISMATCH"):
+        client.revoke_ssh(allocation_id)
+    with pytest.raises(NodeSegmentError, match="INVALID_SSH_ADMISSION"):
+        client.admit_ssh({**admission, "address": "192.168.0.1"})

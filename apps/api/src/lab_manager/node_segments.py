@@ -2,6 +2,7 @@
 
 import hashlib
 import http.client
+import ipaddress
 import json
 import re
 import ssl
@@ -30,13 +31,20 @@ def bridge_name(allocation_id: uuid.UUID) -> str:
     return "lmbr" + suffix
 
 
-def validate_result(value, allocation_id: uuid.UUID, mode: str | None, cidr: str | None) -> dict:
+def validate_result(
+    value,
+    allocation_id: uuid.UUID,
+    mode: str | None,
+    cidr: str | None,
+    *,
+    states: tuple[str, ...] = ("CREATED",),
+) -> dict:
     if (
         not isinstance(value, dict)
         or set(value) != {"allocation_id", "mode", "cidr", "bridge", "state"}
         or value["allocation_id"] != str(allocation_id)
         or value["bridge"] != bridge_name(allocation_id)
-        or value["state"] != "CREATED"
+        or value["state"] not in states
         or value["mode"] not in ("ISOLATED", "GROUP_LAN")
         or not isinstance(value["cidr"], str)
         or (mode is not None and value["mode"] != mode)
@@ -70,9 +78,61 @@ class NodeSegmentClient:
         if not isinstance(allocation_id, uuid.UUID) or allocation_id.int == 0:
             raise NodeSegmentError("INVALID_SEGMENT_ID")
         value = self._request("GET", f"/v1/segments/{allocation_id}", None, missing=True)
-        return validate_result(value, allocation_id, None, None) if value is not None else None
+        return (
+            validate_result(value, allocation_id, None, None, states=("CREATED", "ACTIVE"))
+            if value is not None
+            else None
+        )
 
-    def _request(self, method: str, path: str, body: bytes | None, *, missing=False) -> dict | None:
+    def admit_ssh(self, admission: dict) -> dict:
+        """Ask the node to verify one owned LXC before opening its SSH path."""
+        if not isinstance(admission, dict) or set(admission) != {
+            "allocation_id",
+            "runtime_id",
+            "generation",
+            "vmid",
+            "address",
+            "mac",
+        }:
+            raise NodeSegmentError("INVALID_SSH_ADMISSION")
+        try:
+            allocation_id = uuid.UUID(admission["allocation_id"])
+            runtime_id = uuid.UUID(admission["runtime_id"])
+            address = ipaddress.IPv4Address(admission["address"])
+        except (TypeError, ValueError, AttributeError) as error:
+            raise NodeSegmentError("INVALID_SSH_ADMISSION") from error
+        if (
+            allocation_id.int == 0
+            or runtime_id.int == 0
+            or type(admission["generation"]) is not int
+            or not 1 <= admission["generation"] <= 1000000
+            or type(admission["vmid"]) is not int
+            or not 100 <= admission["vmid"] <= 999999999
+            or address not in ipaddress.IPv4Network("10.70.0.0/16")
+            or not isinstance(admission["mac"], str)
+            or not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", admission["mac"])
+        ):
+            raise NodeSegmentError("INVALID_SSH_ADMISSION")
+        body = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode()
+        value = self._request("POST", "/v1/ssh-admissions", body, expected_status=200)
+        if value != {**admission, "mac": admission["mac"].lower(), "state": "APPLIED"}:
+            raise NodeSegmentError("SSH_ADMISSION_RESPONSE_MISMATCH")
+        return value
+
+    def revoke_ssh(self, allocation_id: uuid.UUID) -> dict:
+        if not isinstance(allocation_id, uuid.UUID) or allocation_id.int == 0:
+            raise NodeSegmentError("INVALID_SEGMENT_ID")
+        value = self._request("DELETE", f"/v1/ssh-admissions/{allocation_id}", None)
+        if value not in (
+            {"allocation_id": str(allocation_id), "state": "REVOKED"},
+            {"allocation_id": str(allocation_id), "state": "ABSENT"},
+        ):
+            raise NodeSegmentError("SSH_ADMISSION_RESPONSE_MISMATCH")
+        return value
+
+    def _request(
+        self, method: str, path: str, body: bytes | None, *, missing=False, expected_status=None
+    ) -> dict | None:
         connection = None
         try:
             context = ssl.create_default_context(cafile=str(self.endpoint.ca))
@@ -105,7 +165,9 @@ class NodeSegmentClient:
                 if isinstance(code, str) and ERROR.fullmatch(code):
                     raise NodeSegmentError(code)
                 raise ValueError("invalid error")
-            if response.status != (202 if method == "POST" else 200):
+            if response.status != (
+                expected_status if expected_status is not None else 202 if method == "POST" else 200
+            ):
                 raise ValueError("unexpected status")
             if not isinstance(value, dict):
                 raise ValueError("invalid result")
