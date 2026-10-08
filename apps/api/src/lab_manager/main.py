@@ -16,6 +16,7 @@ from lab_manager import (
     auth,
     catalog,
     groups,
+    guacamole_broker,
     lesson_booking,
     lesson_preview,
     node_policies,
@@ -70,9 +71,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.middleware("http")
     async def security_boundary(request: Request, call_next):
         request.state.request_id = str(uuid.uuid4())
-        if request.method not in {"GET", "HEAD", "OPTIONS"} and (
-            request.headers.get("origin") != settings.public_origin
-            or request.headers.get("sec-fetch-site") == "cross-site"
+        internal_gateway = request.url.path == "/api/internal/guacamole/consume"
+        if (
+            not internal_gateway
+            and request.method not in {"GET", "HEAD", "OPTIONS"}
+            and (
+                request.headers.get("origin") != settings.public_origin
+                or request.headers.get("sec-fetch-site") == "cross-site"
+            )
         ):
             response = JSONResponse(
                 status_code=403,
@@ -153,4 +159,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(lesson_preview.router, prefix="/api", responses=errors)
     app.include_router(lesson_booking.router, prefix="/api", responses=errors)
     app.include_router(runtime_access.router, prefix="/api", responses=errors)
+    app.include_router(guacamole_broker.router, prefix="/api", responses=errors)
     return app

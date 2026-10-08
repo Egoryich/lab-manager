@@ -49,6 +49,19 @@ must consume that nonce, recheck the active run and close tunnels on revocation
 before the public proxy and student access are enabled. The stock JSON
 extension does not provide those guarantees.
 
+The disabled-by-default VPS gateway endpoint is
+`POST /api/internal/guacamole/consume`. The gateway sends the 43-character
+nonce in a JSON body and authenticates the request with
+`X-Lab-Guacamole-Time` (Unix seconds) and
+`X-Lab-Guacamole-Signature` (hex HMAC-SHA256 of
+`<seconds>:<nonce>`). The VPS accepts at most 30 seconds of clock skew,
+atomically marks the nonce consumed, rechecks the live lesson, session,
+membership, runtime, network and reservation, then returns only that SSH
+connection. The 32-byte shared key belongs only in the gateway and VPS secret
+stores. A successful exchange does not by itself implement active tunnel
+revocation, and the public proxy remains disabled until the authentication
+extension and lifecycle checks are in place.
+
 For the isolated JSON-auth check, generate a random 16-byte key with
 `openssl rand -hex 16`; do not commit or log it. The value is local to this
 test stack and must not be used as a substitute for the broker exchange.

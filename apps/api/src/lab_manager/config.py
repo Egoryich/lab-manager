@@ -21,10 +21,16 @@ class Settings(BaseSettings):
     node_config: str | None = None
     guacamole_json_secret: SecretStr | None = None
     guacamole_broker_enabled: bool = False
+    guacamole_broker_secret: SecretStr | None = None
 
     @field_validator("guacamole_json_secret", mode="before")
     @classmethod
     def blank_guacamole_secret_is_unconfigured(cls, value):
+        return None if value == "" else value
+
+    @field_validator("guacamole_broker_secret", mode="before")
+    @classmethod
+    def blank_broker_secret_is_unconfigured(cls, value):
         return None if value == "" else value
 
     @model_validator(mode="after")
@@ -47,6 +53,12 @@ class Settings(BaseSettings):
             r"[0-9a-fA-F]{32}", self.guacamole_json_secret.get_secret_value()
         ):
             raise ValueError("guacamole_json_secret must be 16 random bytes in hex")
+        if self.guacamole_broker_secret is not None and not re.fullmatch(
+            r"[0-9a-fA-F]{64}", self.guacamole_broker_secret.get_secret_value()
+        ):
+            raise ValueError("guacamole_broker_secret must be 32 random bytes in hex")
+        if self.guacamole_broker_enabled and self.guacamole_broker_secret is None:
+            raise ValueError("enabled Guacamole broker requires its secret")
         return self
 
     @property
