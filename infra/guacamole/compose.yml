@@ -4,6 +4,14 @@ services:
   guacd:
     image: guacamole/guacd@sha256:8974eaa9ba32f713daf311e7cc8cd7e4cdfba1edea39eed75524e78ef4b08f4f
     restart: unless-stopped
+    # The upstream image checks every five minutes, longer than our bounded
+    # deployment wait. Keep the same probe but run it during startup.
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4822"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
     security_opt:
       - no-new-privileges:true
     pids_limit: 128
