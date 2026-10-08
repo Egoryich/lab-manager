@@ -88,3 +88,43 @@ def test_startup_recreates_persisted_bridges_and_reports_live_state():
         json.dumps({"action": "get", "allocation_id": str(allocation_id)}).encode(), manager
     )
     assert result["state"] == "ACTIVE"
+
+
+def test_helper_dispatches_only_typed_ssh_admission():
+    class Admissions:
+        def __init__(self):
+            self.calls = []
+
+        def admit(self, admission):
+            self.calls.append(("admit", admission))
+            return admission.record()
+
+        def revoke(self, allocation_id):
+            self.calls.append(("revoke", allocation_id))
+            return True
+
+    allocation_id = uuid.uuid4()
+    payload = {
+        "allocation_id": str(allocation_id),
+        "runtime_id": str(uuid.uuid4()),
+        "generation": 1,
+        "vmid": 901001,
+        "address": "10.70.4.2",
+        "mac": "bc:24:11:aa:bb:cc",
+    }
+    admissions = Admissions()
+    admitted = dispatch(
+        json.dumps({"action": "admit_ssh", "admission": payload}).encode(),
+        Manager(),
+        admissions,
+    )
+    assert admitted == {**payload, "state": "APPLIED"}
+    revoked = dispatch(
+        json.dumps({"action": "revoke_ssh", "allocation_id": str(allocation_id)}).encode(),
+        Manager(),
+        admissions,
+    )
+    assert revoked == {"allocation_id": str(allocation_id), "state": "REVOKED"}
+    assert [call[0] for call in admissions.calls] == ["admit", "revoke"]
+    with pytest.raises(SegmentError, match="INVALID_SEGMENT_REQUEST"):
+        dispatch(json.dumps({"action": "admit_ssh", "admission": payload}).encode(), Manager())

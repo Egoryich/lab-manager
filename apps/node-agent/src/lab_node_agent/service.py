@@ -102,6 +102,7 @@ class SnapshotService:
                 if request_line in (
                     b"POST /v1/commands HTTP/1.1",
                     b"POST /v1/segments HTTP/1.1",
+                    b"POST /v1/ssh-admissions HTTP/1.1",
                 ):
                     length = fields.get(b"content-length", b"")
                     if len(length) > 5 or not length.isdigit() or not 1 <= int(length) <= 16384:
@@ -155,6 +156,50 @@ class SnapshotService:
                             else "409 Conflict"
                             if str(error) == "SEGMENT_SPEC_CONFLICT"
                             else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line == b"POST /v1/ssh-admissions HTTP/1.1" and payload is not None:
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        value = json.loads(payload)
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.admit_ssh, value)
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (ValueError, TypeError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SSH_ADMISSION"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(b"DELETE /v1/ssh-admissions/") and request_line.endswith(
+                b" HTTP/1.1"
+            ):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        allocation_id = uuid.UUID(
+                            request_line.removeprefix(b"DELETE /v1/ssh-admissions/")
+                            .removesuffix(b" HTTP/1.1")
+                            .decode("ascii")
+                        )
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(
+                                self.segment_client.revoke_ssh, allocation_id
+                            )
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
                         )
                         body = json.dumps({"error": str(error)}).encode()
             elif request_line.startswith(b"GET /v1/segments/") and request_line.endswith(
@@ -242,6 +287,7 @@ class SnapshotService:
                 in (
                     b"POST /v1/commands HTTP/1.1",
                     b"POST /v1/segments HTTP/1.1",
+                    b"POST /v1/ssh-admissions HTTP/1.1",
                 )
                 and payload is None
             ):

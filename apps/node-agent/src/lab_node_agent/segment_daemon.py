@@ -8,6 +8,7 @@ import struct
 import uuid
 from pathlib import Path
 
+from lab_node_agent.admission import Admission, AdmissionManager
 from lab_node_agent.segments import STATE_DIR, SegmentError, SegmentManager, SegmentSpec
 
 SOCKET = Path("/run/lab-manager-node/segments.sock")
@@ -23,7 +24,9 @@ def unique_object(pairs):
     return result
 
 
-def dispatch(request: bytes, manager: SegmentManager) -> dict:
+def dispatch(
+    request: bytes, manager: SegmentManager, admissions: AdmissionManager | None = None
+) -> dict:
     """Manage only owned lab bridges and their gateways; never accept shell text."""
     if not 0 < len(request) <= MAX_REQUEST:
         raise SegmentError("INVALID_SEGMENT_REQUEST")
@@ -66,6 +69,23 @@ def dispatch(request: bytes, manager: SegmentManager) -> dict:
                 return {**record, "gateway": gateway, "state": "GATEWAY_PREPARED"}
             manager.close_gateway(allocation_id)
             return {**record, "state": "CREATED"}
+        if (
+            action == "admit_ssh"
+            and set(value) == {"action", "admission"}
+            and admissions is not None
+        ):
+            admission = Admission.parse(value["admission"])
+            return {**admissions.admit(admission), "state": "APPLIED"}
+        if (
+            action == "revoke_ssh"
+            and set(value) == {"action", "allocation_id"}
+            and admissions is not None
+        ):
+            allocation_id = uuid.UUID(value["allocation_id"])
+            return {
+                "allocation_id": str(allocation_id),
+                "state": "REVOKED" if admissions.revoke(allocation_id) else "ABSENT",
+            }
     except (TypeError, ValueError, KeyError) as error:
         raise SegmentError("INVALID_SEGMENT_REQUEST") from error
     raise SegmentError("INVALID_SEGMENT_REQUEST")
@@ -126,7 +146,9 @@ def serve() -> None:
         raise RuntimeError("STATE_DIRECTORY_UNSAFE")
     with (STATE_DIR / "segments.lock").open("a+") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        restore_bridges(SegmentManager())
+        manager = SegmentManager()
+        restore_bridges(manager)
+        AdmissionManager(manager).restore()
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         listener.bind(str(SOCKET))
         os.chown(SOCKET, 0, user.pw_gid)
@@ -144,7 +166,8 @@ def serve() -> None:
                     data = read_line(client)
                     with (STATE_DIR / "segments.lock").open("a+") as lock:
                         fcntl.flock(lock, fcntl.LOCK_EX)
-                        result = dispatch(data, SegmentManager())
+                        manager = SegmentManager()
+                        result = dispatch(data, manager, AdmissionManager(manager))
                     response = {"ok": True, "result": result}
                 except (OSError, SegmentError) as error:
                     code = str(error)

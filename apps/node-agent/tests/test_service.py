@@ -135,3 +135,65 @@ def test_mtls_snapshot_boundary_and_freshness(tmp_path):
             assert (await request()).startswith(b"HTTP/1.1 503")
 
     asyncio.run(scenario())
+
+
+def test_mtls_ssh_admission_only_dispatches_typed_requests(tmp_path):
+    pins = certificates(tmp_path)
+    allocation_id = uuid.uuid4()
+    calls = []
+
+    class Segments:
+        def admit_ssh(self, value):
+            calls.append(("admit", value))
+            return {**value, "state": "APPLIED"}
+
+        def revoke_ssh(self, value):
+            calls.append(("revoke", value))
+            return {"allocation_id": str(value), "state": "REVOKED"}
+
+    async def scenario():
+        service = SnapshotService(
+            Reader(), str(uuid.uuid4()), pins["client"], segment_client=Segments()
+        )
+        tls = server_context(tmp_path / "ca.pem", tmp_path / "server.pem", tmp_path / "server.key")
+        server = await asyncio.start_server(service.handle, "127.0.0.1", 0, ssl=tls, limit=8192)
+        port = server.sockets[0].getsockname()[1]
+
+        async def request(line, body=None):
+            context = ssl.create_default_context(cafile=str(tmp_path / "ca.pem"))
+            context.load_cert_chain(tmp_path / "client.pem", tmp_path / "client.key")
+            reader, writer = await asyncio.open_connection(
+                "127.0.0.1", port, ssl=context, server_hostname="localhost"
+            )
+            headers = b"Host: localhost\r\n"
+            if body is not None:
+                headers += (
+                    b"Content-Type: application/json\r\nContent-Length: "
+                    + str(len(body)).encode()
+                    + b"\r\n"
+                )
+            writer.write(line + b"\r\n" + headers + b"\r\n" + (body or b""))
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(), 5)
+            writer.close()
+            await writer.wait_closed()
+            return response
+
+        async with server:
+            record = {"allocation_id": str(allocation_id), "vmid": 901001}
+            body = json.dumps(record).encode()
+            assert (await request(b"POST /v1/ssh-admissions HTTP/1.1", body)).startswith(
+                b"HTTP/1.1 200"
+            )
+            assert (
+                await request(
+                    b"DELETE /v1/ssh-admissions/" + str(allocation_id).encode() + b" HTTP/1.1"
+                )
+            ).startswith(b"HTTP/1.1 200")
+            assert (await request(b"DELETE /v1/ssh-admissions/nope HTTP/1.1")).startswith(
+                b"HTTP/1.1 400"
+            )
+            assert (await request(b"POST /v1/ssh-admissions HTTP/1.1")).startswith(b"HTTP/1.1 400")
+        assert calls == [("admit", record), ("revoke", allocation_id)]
+
+    asyncio.run(scenario())
