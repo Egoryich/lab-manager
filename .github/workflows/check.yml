@@ -26,6 +26,24 @@ jobs:
         run: |
           uv run --project apps/node-agent python -c 'from lab_node_agent.network_policy import Segment, SegmentMode, render_l2_policy; print(render_l2_policy((Segment("lmbrgroup1", SegmentMode.GROUP_LAN), Segment("lmbrsolo1", SegmentMode.ISOLATED))))' > /tmp/lab-node-l2.nft
           sudo nft --check --file /tmp/lab-node-l2.nft
+      - name: Validate isolated SSH admission syntax
+        run: |
+          cat > /tmp/lab-network-policy.json <<'JSON'
+          {
+            "segments": [{"bridge": "lmbrsolo1", "mode": "ISOLATED"}],
+            "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+            "guests": [{
+              "bridge": "lmbrsolo1",
+              "vmid": 901001,
+              "cidr": "10.70.2.0/30",
+              "address": "10.70.2.2",
+              "mac": "BC:24:11:AA:BB:CC"
+            }]
+          }
+          JSON
+          uv run --project apps/node-agent lab-node-policy \
+            /tmp/lab-network-policy.json > /tmp/lab-network-policy.nft
+          sudo nft --check --file /tmp/lab-network-policy.nft
       - run: uv build --project apps/node-agent --wheel --out-dir artifacts/node-agent
       - name: Check standalone installation
         run: |
