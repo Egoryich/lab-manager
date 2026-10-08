@@ -9,6 +9,22 @@ tested, restricted Internet route. [Docker's Debian installation guide](https://
 and [Tailscale's Debian packages](https://pkgs.tailscale.com/stable/debian/)
 describe those repositories.
 
+The initial Proxmox-side check succeeded with a running VM, key-only SSH,
+completed cloud-init, DNS resolution and a Debian package-index refresh. For
+another installation, substitute its VMID, private VM address and private key;
+run each short line separately so terminal paste cannot truncate a heredoc:
+
+```bash
+qm status '<GUACAMOLE_VMID>'
+ssh -i '<GUACAMOLE_BOOTSTRAP_KEY>' -o BatchMode=yes '<VM_USER>@<VM_PRIVATE_IP>' 'cloud-init status --long; getent ahostsv4 deb.debian.org'
+ssh -i '<GUACAMOLE_BOOTSTRAP_KEY>' -o BatchMode=yes '<VM_USER>@<VM_PRIVATE_IP>' 'sudo -n apt-get update -qq && echo PASS-APT'
+```
+
+The cloud image may report `degraded done` solely because Proxmox emits the
+deprecated `user` cloud-init field. Check `errors: []` and the actual network
+tests before treating that warning as a provisioning failure. Never rerun the
+VM creation script against a VMID that already exists.
+
 This stack runs inside a dedicated infrastructure VM on Proxmox, not on the
 small VPS or the Proxmox host. It uses the official Guacamole 1.6.0 and guacd
 image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
