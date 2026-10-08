@@ -25,6 +25,15 @@ deprecated `user` cloud-init field. Check `errors: []` and the actual network
 tests before treating that warning as a provisioning failure. Never rerun the
 VM creation script against a VMID that already exists.
 
+The Debian 13 gateway bootstrap was also completed successfully: the pinned
+script checksum matched, the VM installed Docker Engine, Compose and Tailscale,
+and printed `PASS: Docker Compose and Tailscale installed in the Guacamole VM`.
+Run the same script for a new gateway only after the three checks above. Fetch
+it by an immutable Git commit and verify its SHA-256 before sending it over
+SSH to `sudo -n bash -s` inside that VM. Keep the script file on Proxmox for
+inspection and execute each short command separately; never pipe an unchecked
+network response straight into a shell.
+
 This stack runs inside a dedicated infrastructure VM on Proxmox, not on the
 small VPS or the Proxmox host. It uses the official Guacamole 1.6.0 and guacd
 image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
