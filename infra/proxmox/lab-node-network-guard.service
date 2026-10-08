@@ -1,0 +1,11 @@
+[Unit]
+Description=Lab Manager deny-only guard for future guest bridges
+Before=pve-guests.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft --file /etc/lab-manager-node/network-guard.nft
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

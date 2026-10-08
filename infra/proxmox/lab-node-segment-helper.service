@@ -1,0 +1,38 @@
+[Unit]
+Description=Lab Manager restricted local bridge helper
+Requires=lab-node-network-guard.service
+After=lab-node-network-guard.service
+
+[Service]
+Type=simple
+User=root
+Group=lab-node-agent
+ExecStart=/opt/lab-manager-node/current/venv/bin/python -m lab_node_agent.segment_daemon
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=lab-manager-node
+RuntimeDirectoryMode=0750
+StateDirectory=lab-manager-node
+StateDirectoryMode=0750
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=CAP_NET_ADMIN
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+TasksMax=8
+MemoryMax=64M
+CPUQuota=25%
+LimitNOFILE=64
+
+[Install]
+WantedBy=multi-user.target

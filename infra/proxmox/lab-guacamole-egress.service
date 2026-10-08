@@ -1,0 +1,13 @@
+[Unit]
+Description=Lab Manager dedicated Guacamole VM egress policy
+Requires=lab-node-network-guard.service
+After=lab-node-network-guard.service
+Before=pve-guests.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft --file /etc/lab-manager-node/guacamole-egress.nft
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

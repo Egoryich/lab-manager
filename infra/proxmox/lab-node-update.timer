@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for verified Lab Manager node releases
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+AccuracySec=15s
+Unit=lab-node-update.service
+
+[Install]
+WantedBy=timers.target

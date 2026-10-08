@@ -31,16 +31,47 @@ jobs:
       - run: uv run --project apps/node-agent ruff check apps/node-agent
       - run: uv run --project apps/node-agent ruff format --check apps/node-agent
       - run: uv run --project apps/node-agent pytest apps/node-agent/tests -c apps/node-agent/pyproject.toml -q
+      - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/proxmox-lxc-smoke.sh tools/install-node-network-guard.sh tools/install-guacamole-egress.sh && python3 -m py_compile tools/update-node.py
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nftables
+      - run: sudo nft --check --file infra/proxmox/lab-network-guard.nft
+      - name: Validate Guacamole egress policy syntax
+        run: |
+          python3 tools/render-guacamole-egress.py 10.60.0.10 bc:24:11:00:00:01 vmbr1 vmbr0 10.70.0.0/16 > /tmp/lab-guacamole-egress.nft
+          sudo nft --check --file /tmp/lab-guacamole-egress.nft
+      - name: Validate generated L2 policy syntax
+        run: |
+          uv run --project apps/node-agent python -c 'from lab_node_agent.network_policy import Segment, SegmentMode, render_l2_policy; print(render_l2_policy((Segment("lmbrgroup1", SegmentMode.GROUP_LAN), Segment("lmbrsolo1", SegmentMode.ISOLATED))))' > /tmp/lab-node-l2.nft
+          sudo nft --check --file /tmp/lab-node-l2.nft
+      - name: Validate isolated SSH admission syntax
+        run: |
+          cat > /tmp/lab-network-policy.json <<'JSON'
+          {
+            "segments": [{"bridge": "lmbrsolo1", "mode": "ISOLATED"}],
+            "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+            "guests": [{
+              "bridge": "lmbrsolo1",
+              "vmid": 901001,
+              "cidr": "10.70.2.0/30",
+              "address": "10.70.2.2",
+              "mac": "BC:24:11:AA:BB:CC"
+            }]
+          }
+          JSON
+          uv run --project apps/node-agent lab-node-policy \
+            /tmp/lab-network-policy.json > /tmp/lab-network-policy.nft
+          sudo nft --check --file /tmp/lab-network-policy.nft
       - run: uv build --project apps/node-agent --wheel --out-dir artifacts/node-agent
       - name: Check standalone installation
         run: |
           python -m venv /tmp/lab-agent-package-test
           /tmp/lab-agent-package-test/bin/pip install --no-deps artifacts/node-agent/*.whl
           /tmp/lab-agent-package-test/bin/lab-node-agent --help
+          /tmp/lab-agent-package-test/bin/lab-node-policy --help
+          /tmp/lab-agent-package-test/bin/lab-node-segment --help
           /tmp/lab-agent-package-test/bin/python -m lab_node_agent.service --help
-          cp infra/proxmox/lab-node-agent.service tools/node-pki.py artifacts/node-agent/
+          cp infra/proxmox/lab-node-agent.service infra/proxmox/lab-node-storage-snapshot.service infra/proxmox/lab-node-storage-snapshot.timer infra/proxmox/lab-node-update.service infra/proxmox/lab-node-update.timer tools/node-pki.py tools/update-node.py tools/install-node-updater.sh artifacts/node-agent/
           cd artifacts/node-agent
-          sha256sum *.whl *.service *.py > SHA256SUMS
+          sha256sum *.whl *.service *.timer *.py *.sh > SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: node-agent-${{ github.sha }}
@@ -67,8 +98,8 @@ jobs:
             echo "Release already exists; assets are not overwritten."
           else
             gh release create "$tag" release/* --target "$GITHUB_SHA" --prerelease \
-              --title "Node inventory ${GITHUB_SHA}" \
-              --notes "Read-only Proxmox inventory with pinned mTLS service. No guest changes. Manual deployment: docs/node-transport.md at this commit."
+              --title "Node agent ${GITHUB_SHA}" \
+              --notes "Read-only inventory plus dormant, typed LXC command endpoint with durable receipts. Commands require separate token and manual activation; guest traffic remains closed. Deployment: docs/node-commands.md at this commit."
           fi
   identity-groups:
     runs-on: ubuntu-latest
@@ -102,6 +133,7 @@ jobs:
       - run: bash -n tools/install-vps-updater.sh
       - run: bash -n tools/bootstrap-guacamole-vm.sh
       - run: bash -n tools/install-guacamole-test-stack.sh
+      - run: bash -n tools/prepare-guacamole-vm.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

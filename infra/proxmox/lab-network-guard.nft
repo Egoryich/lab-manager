@@ -1,0 +1,36 @@
+# Lab Manager owns this table only. The lmbr prefix is reserved for its guest bridges.
+# This is a deny-only base: no guest may start until the full per-segment policy is applied.
+# Replacing these tables is one nftables transaction; unrelated Proxmox/Tailscale rules stay intact.
+destroy table inet lab_manager
+destroy table bridge lab_manager_l2
+table inet lab_manager {
+    chain guest_input {
+        type filter hook input priority -10; policy accept;
+        iifname "lmbr*" drop
+    }
+
+    chain guest_forward {
+        type filter hook forward priority -10; policy accept;
+        iifname "lmbr*" drop
+        oifname "lmbr*" drop
+    }
+
+    chain guest_output {
+        type filter hook output priority -10; policy accept;
+        oifname "lmbr*" drop
+    }
+}
+
+# The inet family does not cover frames switched between ports on one bridge.
+# Until a segment policy is installed, also deny this L2 path and host-bound frames.
+table bridge lab_manager_l2 {
+    chain guest_bridge_input {
+        type filter hook input priority -10; policy accept;
+        meta ibrname "lmbr*" drop
+    }
+
+    chain guest_bridge_forward {
+        type filter hook forward priority -10; policy accept;
+        meta ibrname "lmbr*" drop
+    }
+}

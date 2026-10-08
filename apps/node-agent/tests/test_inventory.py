@@ -36,6 +36,11 @@ def data():
             }
         ],
         "qemu": [],
+        "network": [
+            {"type": "bridge", "iface": "vmbr0", "active": 1, "bridge_ports": "nic0"},
+            {"type": "bridge", "iface": "vmbr1", "active": 1, "bridge_ports": ""},
+            {"type": "eth", "iface": "nic0", "active": 1},
+        ],
         "lxc": [
             {
                 "vmid": 201,
@@ -58,16 +63,39 @@ class Reader:
     def get(self, key):
         return self.data[key]
 
+    def guest_config(self, kind, vmid):
+        return self.data.get("guest_configs", {}).get((kind, vmid), {})
+
 
 def test_snapshot_preserves_external_guests_without_admission():
     result = collect(Reader())
     assert result["host"]["memory_total_bytes"] == 32 * 2**30
     assert result["guests"][0]["ownership"] == "UNVERIFIED"
+    assert result["guests"][0]["ownership_marker"] is None
     assert result["guests"][0]["reported_maxdisk_bytes"] == 10 * 2**30
     assert result["guests"][0]["reported_status"] == "stopped"
     assert result["storages"][0]["thin_metadata_percent"] is None
+    assert result["local_thin_sample_finished_at"] is None
     assert result["admission_ready"] is False
+    assert result["network_bridges"] == [
+        {"name": "vmbr0", "active": True, "ports": ["nic0"]},
+        {"name": "vmbr1", "active": True, "ports": []},
+    ]
+    assert "NETWORK_AND_GATEWAY_NOT_VERIFIED" in result["limitations"]
     assert "token" not in json.dumps(result)
+
+
+def test_lab_marker_is_observed_but_not_trusted_without_vps_binding():
+    reader = Reader()
+    runtime = "e6456ac0-6b4b-47c3-a9fa-b92b006cd054"
+    marker = f"lab-manager:runtime={runtime};generation=1"
+    reader.data["guest_configs"] = {("LXC", 201): {"description": marker + "\n"}}
+    guest = collect(reader)["guests"][0]
+    assert guest["ownership_marker"] == marker
+    assert guest["ownership"] == "UNVERIFIED"
+    reader.data["guest_configs"][("LXC", 201)] = {"description": "lab-manager:runtime=bad"}
+    with pytest.raises(InventoryError, match="INVALID_LAB_OWNERSHIP_MARKER"):
+        collect(reader)
 
 
 def test_missing_capacity_is_unknown_and_duplicate_guest_is_rejected():
@@ -84,6 +112,53 @@ def test_narrow_token_cannot_present_empty_inventory_as_free_capacity():
     reader.data["permissions"]["/"].pop("VM.Audit")
     with pytest.raises(InventoryError, match="GLOBAL_AUDIT_PERMISSIONS_REQUIRED"):
         collect(reader)
+
+
+def test_network_observation_failure_does_not_hide_other_inventory():
+    class NetworkDenied(Reader):
+        def get(self, key):
+            if key == "network":
+                raise InventoryError("PROXMOX_ACCESS_DENIED")
+            return super().get(key)
+
+    result = collect(NetworkDenied())
+    assert result["network_bridges"] == []
+    assert "NETWORK_INVENTORY_UNAVAILABLE" in result["limitations"]
+    assert result["admission_ready"] is False
+
+    reader = Reader()
+    reader.data["network"][0].pop("bridge_ports")
+    malformed = collect(reader)
+    assert malformed["network_bridges"] == []
+    assert "NETWORK_INVENTORY_UNAVAILABLE" in malformed["limitations"]
+
+
+def test_local_storage_metadata_requires_exact_pool_match_and_never_opens_admission():
+    local = {
+        "sample_finished_at": datetime.now(UTC).isoformat(),
+        "thin_pools": [
+            {
+                "storage": "student-lvm",
+                "vgname": "student-lvm",
+                "thinpool": "student-lvm",
+                "pool_size_bytes": 456 * 2**30,
+                "data_percent": 1.5,
+                "metadata_percent": 0.39,
+                "volumes": [],
+                "ownership_reconciled": False,
+            }
+        ],
+    }
+    matched = collect(Reader(), local)
+    assert matched["storages"][0]["thin_metadata_percent"] == 0.39
+    assert matched["local_thin_pools"][0]["ownership_reconciled"] is False
+    assert matched["local_thin_sample_finished_at"] == local["sample_finished_at"]
+    assert matched["admission_ready"] is False
+    local["thin_pools"][0]["pool_size_bytes"] += 1
+    mismatched = collect(Reader(), local)
+    assert mismatched["storages"][0]["thin_metadata_percent"] is None
+    assert mismatched["local_thin_pools"] == []
+    assert "LOCAL_STORAGE_MISMATCH" in mismatched["limitations"]
 
 
 @pytest.fixture
@@ -135,7 +210,15 @@ def https_pve(tmp_path):
             self.end_headers()
             resource = self.path.split("/")[-1].split("?")[0]
             payload = (
-                b"x" * 1025 if state.oversized else json.dumps({"data": data()[resource]}).encode()
+                b"x" * 1025
+                if state.oversized
+                else json.dumps(
+                    {
+                        "data": {"description": "lab:runtime-test"}
+                        if resource == "config"
+                        else data()[resource]
+                    }
+                ).encode()
             )
             self.wfile.write(payload)
 
@@ -165,7 +248,7 @@ def test_verified_https_allows_only_fixed_gets_and_refuses_redirect(https_pve, m
     monkeypatch.setenv("HTTPS_PROXY", "http://invalid.example:9")
     reader = ProxmoxReader(config)
     assert collect(reader)["node"] == "pve"
-    assert len(state.requests) == 6
+    assert len(state.requests) == 8
     assert all(method == "GET" for method, _, _ in state.requests)
     assert all(
         auth == "PVEAPIToken=inventory@pve!reader=test-token-value-0123456789"
@@ -177,6 +260,21 @@ def test_verified_https_allows_only_fixed_gets_and_refuses_redirect(https_pve, m
     state.redirect = True
     with pytest.raises(InventoryError, match="PROXMOX_REDIRECT_REFUSED"):
         reader.get("status")
+
+
+def test_guest_config_is_narrow_read_only_and_validates_identity(https_pve):
+    config, state = https_pve
+    reader = ProxmoxReader(config)
+    assert reader.guest_config("QEMU", 510) == {"description": "lab:runtime-test"}
+    assert reader.guest_config("LXC", 511) == {"description": "lab:runtime-test"}
+    assert [(method, path) for method, path, _ in state.requests] == [
+        ("GET", "/api2/json/nodes/pve/qemu/510/config"),
+        ("GET", "/api2/json/nodes/pve/lxc/511/config"),
+    ]
+    for kind, vmid in (("QEMU", True), ("QEMU", 99), ("QEMU", 1000000000), ("qemu", 510)):
+        with pytest.raises(InventoryError, match="RESOURCE_NOT_ALLOWED"):
+            reader.guest_config(kind, vmid)
+    assert len(state.requests) == 2
 
 
 def test_certificate_hostname_is_verified(https_pve):

@@ -1,9 +1,28 @@
 """Explicit observations, never physical admission guarantees or ownership guesses."""
 
+import re
 import uuid
 from datetime import UTC, datetime
 
 from lab_node_agent.proxmox import InventoryError
+
+OWNER_MARKER = re.compile(
+    r"lab-manager:runtime=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+    r"[0-9a-f]{4}-[0-9a-f]{12});generation=([1-9][0-9]{0,6})\Z"
+)
+
+
+def ownership_marker(config):
+    description = object_value(config).get("description", "")
+    if not isinstance(description, str) or len(description) > 1024:
+        raise InventoryError("INVALID_GUEST_DESCRIPTION")
+    marker = description.rstrip("\r\n")
+    if not marker.startswith("lab-manager:"):
+        return None
+    match = OWNER_MARKER.fullmatch(marker)
+    if not match or uuid.UUID(match.group(1)).int == 0 or int(match.group(2)) > 1000000:
+        raise InventoryError("INVALID_LAB_OWNERSHIP_MARKER")
+    return marker
 
 
 def object_value(value):
@@ -32,7 +51,26 @@ def label(value):
     return value
 
 
-def collect(reader):
+def bridges(value):
+    result = []
+    for raw in array_value(value):
+        item = object_value(raw)
+        if item.get("type") != "bridge":
+            continue
+        ports = item.get("bridge_ports")
+        if not isinstance(ports, str) or len(ports) > 1024:
+            raise InventoryError("PROXMOX_RESPONSE_INVALID")
+        result.append(
+            {
+                "name": label(item.get("iface")),
+                "active": item.get("active") == 1,
+                "ports": [] if ports in ("", "none") else ports.split(),
+            }
+        )
+    return result
+
+
+def collect(reader, local_storage=None):
     started = datetime.now(UTC)
     # Lists are permission-filtered. Refuse a token missing global audit grants.
     permissions = object_value(reader.get("permissions"))
@@ -67,6 +105,9 @@ def collect(reader):
                 # E.g. a guest moved during non-atomic collection. Do not hide uncertainty.
                 raise InventoryError("INCONSISTENT_GUEST_LIST")
             ids.add(vmid)
+            # A marker is only a claim. VPS must match it to a durable runtime
+            # binding before it may consider ownership reconciled.
+            marker = ownership_marker(reader.guest_config(kind, vmid))
             reported = item.get("status")
             guests.append(
                 {
@@ -81,8 +122,41 @@ def collect(reader):
                     # maxdisk is not a complete sum of all disks; never treat it as a ledger.
                     "reported_maxdisk_bytes": count(item.get("maxdisk"), optional=True),
                     "ownership": "UNVERIFIED",
+                    "ownership_marker": marker,
                 }
             )
+    limitations = [
+        "NON_ATOMIC_OBSERVATION",
+        "ACL_FILTERING_POSSIBLE",
+        "DISK_COMMITMENTS_NOT_RECONCILED",
+        "NETWORK_AND_GATEWAY_NOT_VERIFIED",
+    ]
+    try:
+        network_bridges = bridges(reader.get("network"))
+    except InventoryError:
+        network_bridges = []
+        limitations.append("NETWORK_INVENTORY_UNAVAILABLE")
+    local_pools = []
+    if local_storage is None:
+        limitations.append("LOCAL_STORAGE_SNAPSHOT_UNAVAILABLE")
+    else:
+        by_name = {pool["storage"]: pool for pool in local_storage["thin_pools"]}
+        observed = {storage["name"]: storage for storage in storages}
+        if any(
+            name not in observed
+            or observed[name]["backend"] != "lvmthin"
+            or observed[name]["total_bytes"] != pool["pool_size_bytes"]
+            or not observed[name]["active"]
+            for name, pool in by_name.items()
+        ) or any(
+            storage["backend"] == "lvmthin" and storage["name"] not in by_name
+            for storage in storages
+        ):
+            limitations.append("LOCAL_STORAGE_MISMATCH")
+        else:
+            for name, pool in by_name.items():
+                observed[name]["thin_metadata_percent"] = pool["metadata_percent"]
+            local_pools = local_storage["thin_pools"]
     return {
         "protocol_version": 1,
         "snapshot_id": str(uuid.uuid4()),
@@ -101,12 +175,11 @@ def collect(reader):
         },
         "storages": storages,
         "guests": guests,
+        "network_bridges": network_bridges,
+        "local_thin_pools": local_pools,
+        "local_thin_sample_finished_at": (
+            local_storage["sample_finished_at"] if local_pools else None
+        ),
         "admission_ready": False,
-        "limitations": [
-            "NON_ATOMIC_OBSERVATION",
-            "ACL_FILTERING_POSSIBLE",
-            "THIN_METADATA_NOT_COLLECTED",
-            "DISK_COMMITMENTS_NOT_RECONCILED",
-            "NETWORK_AND_GATEWAY_NOT_VERIFIED",
-        ],
+        "limitations": limitations,
     }

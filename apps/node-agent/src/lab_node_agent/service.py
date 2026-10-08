@@ -15,15 +15,21 @@ import uuid
 from pathlib import Path
 
 from lab_node_agent.cli import read_credentials
+from lab_node_agent.command_dispatch import CommandDispatcher, CommandError, inspect_lab_bridge
+from lab_node_agent.command_journal import CommandJournal
+from lab_node_agent.host_storage import StorageProbeError, read_snapshot
 from lab_node_agent.inventory import collect
+from lab_node_agent.lxc_provider import ProxmoxLxcProvider
 from lab_node_agent.proxmox import ProxmoxConfig, ProxmoxReader
+from lab_node_agent.segment_client import SegmentClient
+from lab_node_agent.segments import SegmentError
 
 logger = logging.getLogger("lab_node_agent")
 MAX_BODY = 4 * 1024 * 1024
 
 
 class SnapshotService:
-    def __init__(self, reader, node_id, client_fingerprint):
+    def __init__(self, reader, node_id, client_fingerprint, dispatcher=None, segment_client=None):
         self.reader = reader
         self.node_id = str(uuid.UUID(node_id))
         self.boot_id = str(uuid.uuid4())
@@ -33,10 +39,18 @@ class SnapshotService:
         self.body = None
         self.collected_at = 0.0
         self.connections = 0
+        self.dispatcher = dispatcher
+        self.segment_client = segment_client
+        self.command_lock = asyncio.Lock()
 
     async def refresh(self):
         try:
-            sample = await asyncio.to_thread(collect, self.reader)
+            try:
+                local_storage = await asyncio.to_thread(read_snapshot)
+            except StorageProbeError as error:
+                local_storage = None
+                logger.info("local_storage_unavailable code=%s", error)
+            sample = await asyncio.to_thread(collect, self.reader, local_storage)
             body = json.dumps(
                 {"node_id": self.node_id, "agent_boot_id": self.boot_id, "sample": sample},
                 ensure_ascii=False,
@@ -71,24 +85,224 @@ class SnapshotService:
                 if len(header) > 8192:
                     return
                 lines = header.split(b"\r\n")
-                if lines[0] != b"GET /v1/inventory HTTP/1.1":
-                    status, body = "404 Not Found", b'{"error":"NOT_FOUND"}'
-                elif any(
-                    line.lower().startswith((b"transfer-encoding:", b"content-length:"))
-                    for line in lines[1:]
+                fields = {}
+                for line in lines[1:]:
+                    if not line:
+                        continue
+                    if b":" not in line:
+                        return
+                    name, value = line.split(b":", 1)
+                    key = name.strip().lower()
+                    if key in fields:
+                        return
+                    fields[key] = value.strip()
+                if b"transfer-encoding" in fields:
+                    return
+                request_line = lines[0]
+                if request_line in (
+                    b"POST /v1/commands HTTP/1.1",
+                    b"POST /v1/segments HTTP/1.1",
+                    b"POST /v1/ssh-admissions HTTP/1.1",
                 ):
-                    status, body = "400 Bad Request", b'{"error":"BODY_NOT_ALLOWED"}'
-                elif self.body is None or not 0 <= time.monotonic() - self.collected_at <= 120:
+                    length = fields.get(b"content-length", b"")
+                    if len(length) > 5 or not length.isdigit() or not 1 <= int(length) <= 16384:
+                        status, body = "400 Bad Request", b'{"error":"INVALID_CONTENT_LENGTH"}'
+                        payload = None
+                    elif fields.get(b"content-type") != b"application/json":
+                        status, body = "400 Bad Request", b'{"error":"INVALID_CONTENT_TYPE"}'
+                        payload = None
+                    else:
+                        payload = await reader.readexactly(int(length))
+                else:
+                    payload = None
+                    if b"content-length" in fields:
+                        status, body = "400 Bad Request", b'{"error":"BODY_NOT_ALLOWED"}'
+                        request_line = b"GET_WITH_BODY"
+            if request_line == b"GET /v1/inventory HTTP/1.1":
+                if self.body is None or not 0 <= time.monotonic() - self.collected_at <= 120:
                     status, body = "503 Service Unavailable", b'{"error":"NO_FRESH_SAMPLE"}'
                 else:
                     status, body = "200 OK", self.body
-                writer.write(
-                    f"HTTP/1.1 {status}\r\nContent-Type: application/json\r\n"
-                    f"Content-Length: {len(body)}\r\nCache-Control: no-store\r\n"
-                    "Connection: close\r\n\r\n".encode()
-                    + body
+            elif request_line == b"POST /v1/commands HTTP/1.1" and payload is not None:
+                if self.dispatcher is None:
+                    status, body = "503 Service Unavailable", b'{"error":"COMMANDS_DISABLED"}'
+                else:
+                    try:
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.dispatcher.submit, payload)
+                        status, body = "202 Accepted", json.dumps(result).encode()
+                    except CommandError as error:
+                        status = (
+                            "409 Conflict"
+                            if error.code in ("OPERATION_ID_CONFLICT", "VMID_OPERATION_IN_PROGRESS")
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": error.code}).encode()
+            elif request_line == b"POST /v1/segments HTTP/1.1" and payload is not None:
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        value = json.loads(payload)
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.create, value)
+                        status, body = "202 Accepted", json.dumps(result).encode()
+                    except (ValueError, TypeError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_SPEC"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                            if str(error) == "SEGMENT_SPEC_CONFLICT"
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line == b"POST /v1/ssh-admissions HTTP/1.1" and payload is not None:
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        value = json.loads(payload)
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.admit_ssh, value)
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (ValueError, TypeError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SSH_ADMISSION"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(b"DELETE /v1/ssh-admissions/") and request_line.endswith(
+                b" HTTP/1.1"
+            ):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        allocation_id = uuid.UUID(
+                            request_line.removeprefix(b"DELETE /v1/ssh-admissions/")
+                            .removesuffix(b" HTTP/1.1")
+                            .decode("ascii")
+                        )
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(
+                                self.segment_client.revoke_ssh, allocation_id
+                            )
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(b"GET /v1/segments/") and request_line.endswith(
+                b" HTTP/1.1"
+            ):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        allocation_id = uuid.UUID(
+                            request_line.removeprefix(b"GET /v1/segments/")
+                            .removesuffix(b" HTTP/1.1")
+                            .decode("ascii")
+                        )
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.segment_client.get, allocation_id)
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "404 Not Found"
+                            if str(error) == "SEGMENT_NOT_FOUND"
+                            else "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(
+                (b"PUT /v1/segments/", b"DELETE /v1/segments/")
+            ) and request_line.endswith(b"/gateway HTTP/1.1"):
+                if self.segment_client is None:
+                    status, body = "503 Service Unavailable", b'{"error":"SEGMENTS_DISABLED"}'
+                else:
+                    try:
+                        method, target, _ = request_line.split(b" ")
+                        allocation_id = uuid.UUID(
+                            target.removeprefix(b"/v1/segments/")
+                            .removesuffix(b"/gateway")
+                            .decode("ascii")
+                        )
+                        method_name = "prepare_gateway" if method == b"PUT" else "close_gateway"
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(
+                                getattr(self.segment_client, method_name), allocation_id
+                            )
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_SEGMENT_ID"}'
+                    except SegmentError as error:
+                        status = (
+                            "404 Not Found"
+                            if str(error) == "SEGMENT_NOT_FOUND"
+                            else "503 Service Unavailable"
+                            if str(error) == "SEGMENT_HELPER_UNAVAILABLE"
+                            else "409 Conflict"
+                        )
+                        body = json.dumps({"error": str(error)}).encode()
+            elif request_line.startswith(b"GET /v1/commands/") and request_line.endswith(
+                b" HTTP/1.1"
+            ):
+                if self.dispatcher is None:
+                    status, body = "503 Service Unavailable", b'{"error":"COMMANDS_DISABLED"}'
+                else:
+                    try:
+                        operation_id = uuid.UUID(
+                            request_line.removeprefix(b"GET /v1/commands/")
+                            .removesuffix(b" HTTP/1.1")
+                            .decode("ascii")
+                        )
+                        async with self.command_lock:
+                            result = await asyncio.to_thread(self.dispatcher.status, operation_id)
+                        status, body = "200 OK", json.dumps(result).encode()
+                    except (UnicodeError, ValueError):
+                        status, body = "400 Bad Request", b'{"error":"INVALID_OPERATION_ID"}'
+                    except CommandError as error:
+                        status = (
+                            "404 Not Found"
+                            if error.code == "OPERATION_NOT_FOUND"
+                            else "400 Bad Request"
+                        )
+                        body = json.dumps({"error": error.code}).encode()
+            elif (
+                request_line
+                in (
+                    b"POST /v1/commands HTTP/1.1",
+                    b"POST /v1/segments HTTP/1.1",
+                    b"POST /v1/ssh-admissions HTTP/1.1",
                 )
-                await writer.drain()
+                and payload is None
+            ):
+                pass  # The bounded header/body parser already set an error.
+            elif request_line == b"GET_WITH_BODY":
+                pass
+            else:
+                status, body = "404 Not Found", b'{"error":"NOT_FOUND"}'
+            writer.write(
+                f"HTTP/1.1 {status}\r\nContent-Type: application/json\r\n"
+                f"Content-Length: {len(body)}\r\nCache-Control: no-store\r\n"
+                "Connection: close\r\n\r\n".encode()
+                + body
+            )
+            await writer.drain()
         except (
             OSError,
             ValueError,
@@ -132,7 +346,38 @@ async def run(config_path):
             **read_credentials(credentials / "proxmox-token.json"),
         )
     )
-    service = SnapshotService(reader, config["node_id"], config["client_sha256"])
+    dispatcher = journal = None
+    commands_enabled = config.get("commands_enabled", False)
+    if type(commands_enabled) is not bool:
+        raise ValueError("Invalid command mode")
+    if commands_enabled:
+        journal = CommandJournal(Path("/var/lib/lab-manager-commands/receipts.sqlite3"))
+        dispatcher = CommandDispatcher(
+            node_id=uuid.UUID(config["node_id"]),
+            template=config["command_template"],
+            storage=config["command_storage"],
+            pool=config["command_pool"],
+            journal=journal,
+            provider=ProxmoxLxcProvider(
+                ProxmoxConfig(
+                    config["proxmox_origin"],
+                    config["proxmox_node"],
+                    credentials / "proxmox-ca.pem",
+                    **read_credentials(credentials / "proxmox-write-token.json"),
+                )
+            ),
+            inspect_bridge=inspect_lab_bridge,
+        )
+    segments_enabled = config.get("segments_enabled", False)
+    if type(segments_enabled) is not bool:
+        raise ValueError("Invalid segment mode")
+    service = SnapshotService(
+        reader,
+        config["node_id"],
+        config["client_sha256"],
+        dispatcher,
+        SegmentClient() if segments_enabled else None,
+    )
     context = server_context(
         credentials / "transport-ca.pem", credentials / "server.pem", credentials / "server.key"
     )
@@ -156,6 +401,8 @@ async def run(config_path):
     finally:
         stop.set()
         await collector
+        if journal:
+            journal.close()
 
 
 def main():

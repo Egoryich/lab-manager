@@ -79,13 +79,27 @@ class ProxmoxReader:
             "permissions": "/access/permissions?path=%2F",
             "status": f"/nodes/{self.config.node}/status",
             "storage": f"/nodes/{self.config.node}/storage",
+            "network": f"/nodes/{self.config.node}/network",
             "qemu": f"/nodes/{self.config.node}/qemu",
             "lxc": f"/nodes/{self.config.node}/lxc",
         }
         if resource not in paths:
             raise InventoryError("RESOURCE_NOT_ALLOWED")
+        return self._get_path(paths[resource])
+
+    def guest_config(self, kind: str, vmid: int):
+        """Read one exact guest config for future ownership reconciliation."""
+        if kind not in ("QEMU", "LXC") or type(vmid) is not int or not 100 <= vmid <= 999999999:
+            raise InventoryError("RESOURCE_NOT_ALLOWED")
+        resource = "qemu" if kind == "QEMU" else "lxc"
+        data = self._get_path(f"/nodes/{self.config.node}/{resource}/{vmid}/config")
+        if not isinstance(data, dict):
+            raise InventoryError("PROXMOX_RESPONSE_INVALID")
+        return data
+
+    def _get_path(self, path: str):
         request = urllib.request.Request(
-            self.config.origin.rstrip("/") + "/api2/json" + paths[resource],
+            self.config.origin.rstrip("/") + "/api2/json" + path,
             method="GET",
             headers={
                 "Accept": "application/json",
