@@ -72,7 +72,7 @@ table inet lab_guac_filter {{
 table ip lab_guac_nat {{
     chain vm_postrouting {{
         type nat hook postrouting priority 100; policy accept;
-        ip saddr {address} oifname "{uplink}" masquerade
+        iifname "{bridge}" ip saddr {address} oifname "{uplink}" masquerade
     }}
 }}
 '''
@@ -86,7 +86,10 @@ def main() -> None:
     parser.add_argument("uplink")
     parser.add_argument("lab_pool")
     args = parser.parse_args()
-    print(render(args.vm_ipv4, args.bridge, args.uplink, args.lab_pool), end="")
+    print(
+        render(args.vm_ipv4, args.vm_mac, args.bridge, args.uplink, args.lab_pool),
+        end="",
+    )
 
 
 if __name__ == "__main__":

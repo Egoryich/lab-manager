@@ -1,4 +1,6 @@
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +12,26 @@ def renderer():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.render
+
+
+def test_cli_generates_rules_for_installer():
+    path = Path(__file__).resolve().parents[2] / "tools" / "render-guacamole-egress.py"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(path),
+            "10.60.0.10",
+            "bc:24:11:00:00:01",
+            "vmbr1",
+            "vmbr0",
+            "10.70.0.0/16",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "table inet lab_guac_filter" in result.stdout
+    assert "bc:24:11:00:00:01" in result.stdout
 
 
 def test_only_guacamole_vm_can_reach_public_uplink_and_guest_ssh():
@@ -24,7 +46,7 @@ def test_only_guacamole_vm_can_reach_public_uplink_and_guest_ssh():
     assert 'oifname "vmbr1" ip daddr 10.60.0.10 tcp dport 22 accept' in rules
     assert 'iifname "vmbr1" drop' in rules
     assert 'oifname "vmbr1" drop' in rules
-    assert 'ip saddr 10.60.0.10 oifname "vmbr0" masquerade' in rules
+    assert 'iifname "vmbr1" ip saddr 10.60.0.10 oifname "vmbr0" masquerade' in rules
 
 
 @pytest.mark.parametrize(
