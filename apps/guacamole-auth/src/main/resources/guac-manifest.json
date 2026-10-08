@@ -1,0 +1,8 @@
+{
+  "guacamoleVersion": "1.6.0",
+  "name": "Lab Manager one-time access",
+  "namespace": "lab-manager-auth",
+  "authProviders": [
+    "website.qround.guacamole.LabAuthenticationProvider"
+  ]
+}
