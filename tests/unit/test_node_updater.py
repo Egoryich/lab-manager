@@ -116,6 +116,42 @@ def test_valid_entrypoints_need_no_reinstall(tmp_path, monkeypatch):
     assert calls[-1][:3] == ("runuser", "-u", "lab-node-agent")
 
 
+def test_health_restarts_deny_guard_then_root_helper_before_agent(tmp_path, monkeypatch):
+    config = tmp_path / "service.json"
+    config.write_text('{"segments_enabled": true}')
+    monkeypatch.setattr(updater, "NODE_CONFIG", config)
+    monkeypatch.setattr(updater.time, "sleep", lambda _: None)
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        return (
+            "success"
+            if args == ("systemctl", "show", "-P", "Result", "lab-node-storage-snapshot.service")
+            else ""
+        )
+
+    monkeypatch.setattr(updater, "run", run)
+    updater.health()
+    guard = calls.index(("systemctl", "restart", "lab-node-network-guard.service"))
+    helper = calls.index(("systemctl", "restart", "lab-node-segment-helper.service"))
+    agent = calls.index(("systemctl", "restart", "lab-node-agent.service"))
+    assert guard < helper < agent
+
+
+def test_health_rejects_invalid_segment_mode(tmp_path, monkeypatch):
+    config = tmp_path / "service.json"
+    config.write_text('{"segments_enabled": "true"}')
+    monkeypatch.setattr(updater, "NODE_CONFIG", config)
+    monkeypatch.setattr(
+        updater,
+        "run",
+        lambda *args: "success" if "show" in args else "",
+    )
+    with pytest.raises(updater.UpdateError, match="NODE_CONFIGURATION_INVALID"):
+        updater.health()
+
+
 def test_failed_activation_restores_previous_release_and_blocks_candidate(tmp_path, monkeypatch):
     monkeypatch.setattr(updater, "BASE", tmp_path)
     monkeypatch.setattr(updater, "STATE_DIR", tmp_path / "update-state")

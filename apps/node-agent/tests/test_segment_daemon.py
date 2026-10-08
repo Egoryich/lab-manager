@@ -110,7 +110,6 @@ def test_helper_dispatches_only_typed_ssh_admission():
         "generation": 1,
         "vmid": 901001,
         "address": "10.70.4.2",
-        "mac": "bc:24:11:aa:bb:cc",
     }
     admissions = Admissions()
     admitted = dispatch(

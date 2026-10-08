@@ -8,7 +8,7 @@ import struct
 import uuid
 from pathlib import Path
 
-from lab_node_agent.admission import Admission, AdmissionManager
+from lab_node_agent.admission import AdmissionManager, AdmissionRequest
 from lab_node_agent.segments import STATE_DIR, SegmentError, SegmentManager, SegmentSpec
 
 SOCKET = Path("/run/lab-manager-node/segments.sock")
@@ -74,7 +74,7 @@ def dispatch(
             and set(value) == {"action", "admission"}
             and admissions is not None
         ):
-            admission = Admission.parse(value["admission"])
+            admission = AdmissionRequest.parse(value["admission"])
             return {**admissions.admit(admission), "state": "APPLIED"}
         if (
             action == "revoke_ssh"

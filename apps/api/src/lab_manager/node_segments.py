@@ -92,7 +92,6 @@ class NodeSegmentClient:
             "generation",
             "vmid",
             "address",
-            "mac",
         }:
             raise NodeSegmentError("INVALID_SSH_ADMISSION")
         try:
@@ -109,13 +108,19 @@ class NodeSegmentClient:
             or type(admission["vmid"]) is not int
             or not 100 <= admission["vmid"] <= 999999999
             or address not in ipaddress.IPv4Network("10.70.0.0/16")
-            or not isinstance(admission["mac"], str)
-            or not re.fullmatch(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}", admission["mac"])
         ):
             raise NodeSegmentError("INVALID_SSH_ADMISSION")
         body = json.dumps(admission, sort_keys=True, separators=(",", ":")).encode()
         value = self._request("POST", "/v1/ssh-admissions", body, expected_status=200)
-        if value != {**admission, "mac": admission["mac"].lower(), "state": "APPLIED"}:
+        if (
+            not isinstance(value, dict)
+            or set(value) != set(admission) | {"mac", "state"}
+            or any(value.get(key) != item for key, item in admission.items())
+            or value.get("state") != "APPLIED"
+            or not isinstance(value.get("mac"), str)
+            or not re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", value["mac"])
+            or int(value["mac"][:2], 16) & 1
+        ):
             raise NodeSegmentError("SSH_ADMISSION_RESPONSE_MISMATCH")
         return value
 

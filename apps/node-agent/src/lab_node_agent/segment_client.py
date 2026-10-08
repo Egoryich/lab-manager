@@ -5,7 +5,7 @@ import socket
 import uuid
 from pathlib import Path
 
-from lab_node_agent.admission import Admission
+from lab_node_agent.admission import Admission, AdmissionRequest
 from lab_node_agent.segment_daemon import MAX_REQUEST, SOCKET
 from lab_node_agent.segments import SegmentError, SegmentSpec
 
@@ -104,10 +104,19 @@ class SegmentClient:
         return result
 
     def admit_ssh(self, value: dict) -> dict:
-        admission = Admission.parse(value)
-        result = self._exchange({"action": "admit_ssh", "admission": admission.record()})
-        if result != {**admission.record(), "state": "APPLIED"}:
+        request = AdmissionRequest.parse(value)
+        result = self._exchange({"action": "admit_ssh", "admission": request.record()})
+        if (
+            not isinstance(result, dict)
+            or set(result) != set(request.record()) | {"mac", "state"}
+            or any(result.get(key) != item for key, item in request.record().items())
+            or result.get("state") != "APPLIED"
+        ):
             raise SegmentError("SEGMENT_HELPER_MISMATCH")
+        try:
+            Admission.parse({key: value for key, value in result.items() if key != "state"})
+        except SegmentError as error:
+            raise SegmentError("SEGMENT_HELPER_MISMATCH") from error
         return result
 
     def revoke_ssh(self, allocation_id: uuid.UUID) -> dict:

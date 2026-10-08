@@ -26,6 +26,55 @@ _MAC = re.compile(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\Z")
 
 
 @dataclass(frozen=True)
+class AdmissionRequest:
+    allocation_id: uuid.UUID
+    runtime_id: uuid.UUID
+    generation: int
+    vmid: int
+    address: str
+
+    @classmethod
+    def parse(cls, value: object) -> "AdmissionRequest":
+        if not isinstance(value, dict) or set(value) != {
+            "allocation_id",
+            "runtime_id",
+            "generation",
+            "vmid",
+            "address",
+        }:
+            raise SegmentError("INVALID_SSH_ADMISSION")
+        try:
+            request = cls(
+                uuid.UUID(value["allocation_id"]),
+                uuid.UUID(value["runtime_id"]),
+                value["generation"],
+                value["vmid"],
+                str(ipaddress.IPv4Address(value["address"])),
+            )
+        except (TypeError, ValueError, AttributeError) as error:
+            raise SegmentError("INVALID_SSH_ADMISSION") from error
+        if (
+            request.allocation_id.int == 0
+            or request.runtime_id.int == 0
+            or type(request.generation) is not int
+            or not 1 <= request.generation <= 1000000
+            or type(request.vmid) is not int
+            or not 100 <= request.vmid <= 999999999
+        ):
+            raise SegmentError("INVALID_SSH_ADMISSION")
+        return request
+
+    def record(self) -> dict:
+        return {
+            "allocation_id": str(self.allocation_id),
+            "runtime_id": str(self.runtime_id),
+            "generation": self.generation,
+            "vmid": self.vmid,
+            "address": self.address,
+        }
+
+
+@dataclass(frozen=True)
 class Admission:
     allocation_id: uuid.UUID
     runtime_id: uuid.UUID
@@ -170,6 +219,16 @@ def verify_lxc(admission: Admission, segment: SegmentSpec, config: dict[str, str
         raise SegmentError("GUEST_NETWORK_DRIFT")
 
 
+def assigned_mac(config: dict[str, str]) -> str:
+    """Use the MAC Proxmox assigned, after the full config is checked separately."""
+    matches = [
+        field[7:] for field in config.get("net0", "").split(",") if field.startswith("hwaddr=")
+    ]
+    if len(matches) != 1 or not _MAC.fullmatch(matches[0]) or int(matches[0][:2], 16) & 1:
+        raise SegmentError("GUEST_NETWORK_DRIFT")
+    return matches[0].lower()
+
+
 def apply_nft(rules: str) -> None:
     """Check then load a complete Lab Manager table transaction."""
     descriptor, path = tempfile.mkstemp(prefix="admission.", suffix=".nft", dir=STATE_DIR)
@@ -300,7 +359,15 @@ class AdmissionManager:
     def restore(self) -> None:
         self.firewall(self.render(self.read()))
 
-    def admit(self, admission: Admission) -> dict:
+    def admit(self, request: AdmissionRequest) -> dict:
+        admission = Admission(
+            request.allocation_id,
+            request.runtime_id,
+            request.generation,
+            request.vmid,
+            request.address,
+            assigned_mac(self.config(request.vmid)),
+        )
         records = self.read()
         key = str(admission.allocation_id)
         if key in records and records[key] != admission:

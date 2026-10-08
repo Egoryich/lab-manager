@@ -111,10 +111,9 @@ def test_pinned_ssh_admission_and_revoke(tmp_path, monkeypatch):
         "generation": 1,
         "vmid": 901001,
         "address": "10.70.1.2",
-        "mac": "BC:24:11:AA:BB:CC",
     }
     connection = Connection(
-        Response(200, {**admission, "mac": admission["mac"].lower(), "state": "APPLIED"})
+        Response(200, {**admission, "mac": "bc:24:11:aa:bb:cc", "state": "APPLIED"})
     )
     monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: Context())
     monkeypatch.setattr(

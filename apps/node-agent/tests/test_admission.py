@@ -3,7 +3,7 @@ import uuid
 
 import pytest
 
-from lab_node_agent.admission import Admission, AdmissionManager, verify_lxc
+from lab_node_agent.admission import Admission, AdmissionManager, AdmissionRequest, verify_lxc
 from lab_node_agent.segments import SegmentError, SegmentSpec
 
 
@@ -80,7 +80,10 @@ def test_admission_is_fail_closed_and_revocation_survives_restart(tmp_path):
         config=lambda vmid: config if vmid == admission.vmid else {},
         firewall=applied.append,
     )
-    assert subject.admit(admission)["vmid"] == admission.vmid
+    request = AdmissionRequest.parse(
+        {key: value for key, value in admission.record().items() if key != "mac"}
+    )
+    assert subject.admit(request)["vmid"] == admission.vmid
     assert len(applied) == 2
     assert 'iifname "lmbr*" drop' in applied[0]
     assert "10.60.0.10" in applied[1] and "10.70.4.2" in applied[1]
@@ -106,7 +109,11 @@ def test_failed_admission_does_not_persist_or_open_firewall(tmp_path):
         firewall=applied.append,
     )
     with pytest.raises(SegmentError, match="GUEST_NETWORK_DRIFT"):
-        subject.admit(admission)
+        subject.admit(
+            AdmissionRequest.parse(
+                {key: value for key, value in admission.record().items() if key != "mac"}
+            )
+        )
     assert applied == []
     assert not subject.state_file.exists()
 

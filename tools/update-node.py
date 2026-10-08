@@ -20,6 +20,7 @@ WHEEL = re.compile(r"lab_node_agent-\d+\.\d+\.\d+-py3-none-any\.whl")
 BASE = Path("/opt/lab-manager-node")
 STATE_DIR = BASE / "update-state"
 CURRENT = BASE / "current"
+NODE_CONFIG = Path("/etc/lab-manager-node/service.json")
 UNITS = (
     "lab-node-agent.service",
     "lab-node-storage-snapshot.service",
@@ -296,6 +297,17 @@ def health():
         "-c",
         "from lab_node_agent.host_storage import read_snapshot; read_snapshot()",
     )
+    try:
+        config = json.loads(NODE_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise UpdateError("NODE_CONFIGURATION_UNAVAILABLE") from error
+    segments_enabled = config.get("segments_enabled", False)
+    if type(segments_enabled) is not bool:
+        raise UpdateError("NODE_CONFIGURATION_INVALID")
+    if segments_enabled:
+        run("systemctl", "restart", "lab-node-network-guard.service")
+        run("systemctl", "restart", "lab-node-segment-helper.service")
+        run("systemctl", "is-active", "--quiet", "lab-node-segment-helper.service")
     run("systemctl", "restart", "lab-node-agent.service")
     time.sleep(2)
     run("systemctl", "is-active", "--quiet", "lab-node-agent.service")
