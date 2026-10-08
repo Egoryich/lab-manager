@@ -58,6 +58,35 @@ The VPS check succeeded for the registered gateway: replies first used a relay
 and then a direct peer path. This verifies tailnet reachability, but not yet
 the Guacamole HTTP service or a connection to a student guest.
 
+After starting the private Compose stack, the VPS also received HTTP 200 from
+the Guacamole path over the gateway's tailnet address. Repeat this read-only
+check with the actual tailnet IP; do not publish port 8080 on a public
+interface:
+
+```bash
+curl -sS -o /dev/null -w 'HTTP %{http_code}\n' --max-time 10 \
+  'http://<GUACAMOLE_TAILNET_IP>:8080/guacamole/'
+```
+
+`/opt/lab-manager-guacamole` is root-only. To inspect Compose remotely, use
+absolute paths under `sudo` instead of changing to that directory as the
+unprivileged VM login user:
+
+```bash
+sudo docker compose --env-file /opt/lab-manager-guacamole/.env \
+  -f /opt/lab-manager-guacamole/compose.yml ps
+```
+
+The first private-stack installation started both containers and returned HTTP
+200, but `docker compose --wait --wait-timeout 120` expired while waiting for
+the upstream guacd image's five-minute health interval. The checked Compose
+update runs the same `nc -z 127.0.0.1 4822` probe every ten seconds. The
+installer accepts the exact prior Compose checksum, preserves `.env`, and
+refuses to replace any other local Compose file. The user reran the checked
+installer after CI passed; both containers became `Healthy` and it printed
+`PASS: private Guacamole test stack is reachable on the VM tailnet IP`.
+This confirms the private gateway stack, not yet a guest SSH session.
+
 This stack runs inside a dedicated infrastructure VM on Proxmox, not on the
 small VPS or the Proxmox host. It uses the official Guacamole 1.6.0 and guacd
 image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
