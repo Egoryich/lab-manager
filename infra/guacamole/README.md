@@ -1,5 +1,14 @@
 # Guacamole gateway
 
+The dedicated Debian 13 VM is prepared on Proxmox first. Inside that VM,
+[`bootstrap-guacamole-vm.sh`](../../tools/bootstrap-guacamole-vm.sh) installs
+Docker Engine, Compose and Tailscale from their official Debian 13 apt
+repositories. It checks the VM hostname before changing apt sources and does
+not join Headscale or start Guacamole. Run it as root only after the VM has a
+tested, restricted Internet route. [Docker's Debian installation guide](https://docs.docker.com/engine/install/debian/)
+and [Tailscale's Debian packages](https://pkgs.tailscale.com/stable/debian/)
+describe those repositories.
+
 This stack runs inside a dedicated infrastructure VM on Proxmox, not on the
 small VPS or the Proxmox host. It uses the official Guacamole 1.6.0 and guacd
 image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
