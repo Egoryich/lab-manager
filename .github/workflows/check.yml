@@ -85,6 +85,7 @@ jobs:
       - run: node tools/validate-preparation.mjs
       - run: bash -n tools/install-vps-updater.sh
       - run: bash -n tools/bootstrap-guacamole-vm.sh
+      - run: bash -n tools/install-guacamole-test-stack.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
