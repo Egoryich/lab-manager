@@ -134,6 +134,7 @@ jobs:
       - run: bash -n tools/bootstrap-guacamole-vm.sh
       - run: bash -n tools/install-guacamole-test-stack.sh
       - run: bash -n tools/prepare-guacamole-vm.sh
+      - run: bash -n tools/upgrade-node-updater.sh
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
