@@ -29,13 +29,21 @@ curl --fail --silent --show-error --location --retry 3 \
     --connect-timeout 15 --max-time 120 \
     --proto '=https' --proto-redir '=https' \
     -o "$candidate" \
-    'https://raw.githubusercontent.com/Egoryich/lab-manager/f121b8c4d6f8436b0702ad91d8e53de19e603d48/infra/guacamole/compose.yml'
+    'https://raw.githubusercontent.com/Egoryich/lab-manager/021e271b29f00678f7659f764f1375a93f2b0919/infra/guacamole/compose.yml'
 printf '%s  %s\n' \
-    '307b42490d650a107057efae62d69ecdcd30350b664e2ef088c462c253307f1c' \
+    '354adb2915b0576e088683308d40963c040cb2128625ab0a391eec75393e7b88' \
     "$candidate" | sha256sum --check --strict >/dev/null
 
 if [ -e "$directory/compose.yml" ]; then
-    cmp "$candidate" "$directory/compose.yml"
+    test ! -L "$directory/compose.yml"
+    if ! cmp -s "$candidate" "$directory/compose.yml"; then
+        # Accept only the exact Compose file from the first private test
+        # install. Never overwrite a locally modified deployment.
+        printf '%s  %s\n' \
+            '307b42490d650a107057efae62d69ecdcd30350b664e2ef088c462c253307f1c' \
+            "$directory/compose.yml" | sha256sum --check --strict >/dev/null
+        install -o root -g root -m 0600 "$candidate" "$directory/compose.yml"
+    fi
 else
     install -o root -g root -m 0600 "$candidate" "$directory/compose.yml"
 fi
