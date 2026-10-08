@@ -59,6 +59,6 @@ apt-get install -y --no-install-recommends \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin tailscale
 systemctl enable --now docker.service tailscaled.service
 docker compose version
-tailscale version | head -n 1
+tailscale version
 echo 'PASS: Docker Compose and Tailscale installed in the Guacamole VM'
 echo 'Headscale enrollment and Guacamole deployment are separate steps.'
