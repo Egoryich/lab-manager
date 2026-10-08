@@ -31,12 +31,18 @@ image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
 published port. The VPS Caddy proxy will expose `/guacamole/` under the Lab
 Manager HTTPS origin after the VM's address and routing have been verified.
 
-Guacamole's official encrypted JSON authentication extension accepts a
-short-lived signed grant from Lab Manager. It contains one authorized SSH
-connection, or a `join` connection for teacher assistance. No Guacamole user
-database or separate student password is required. The same random 16-byte
-key must be configured as `JSON_SECRET_KEY` here and held only by the VPS
-backend. Generate it with `openssl rand -hex 16`; do not commit or log it.
+The current Compose file uses Guacamole's encrypted JSON authentication only
+for isolated gateway/protocol validation. It is **not** the student-facing
+authentication design. The VPS API now records a one-time browser launch and
+sets a short-lived HttpOnly cookie scoped to `/guacamole`; it never returns the
+launch nonce in a URL or JSON body. A pinned Guacamole authentication extension
+must consume that nonce, recheck the active run and close tunnels on revocation
+before the public proxy and student access are enabled. The stock JSON
+extension does not provide those guarantees.
+
+For the isolated JSON-auth check, generate a random 16-byte key with
+`openssl rand -hex 16`; do not commit or log it. The value is local to this
+test stack and must not be used as a substitute for the broker exchange.
 
 Create a root-readable `.env` beside `compose.yml` containing `GUAC_BIND_IP`
 and `JSON_SECRET_KEY`. `GUAC_BIND_IP` must be the tailnet IPv4 of this VM.

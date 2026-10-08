@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     password_hash_concurrency: int = Field(default=2, ge=1, le=4)
     node_config: str | None = None
     guacamole_json_secret: SecretStr | None = None
+    guacamole_broker_enabled: bool = False
 
     @field_validator("guacamole_json_secret", mode="before")
     @classmethod

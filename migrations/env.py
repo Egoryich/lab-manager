@@ -2,6 +2,7 @@ import asyncio
 
 from alembic import context
 from lab_manager import (
+    access_models,  # noqa: F401
     catalog_models,  # noqa: F401
     network_models,  # noqa: F401
     node_command_models,  # noqa: F401

@@ -1,16 +1,17 @@
 """Grant a browser-only Guacamole terminal to an active owned runtime."""
 
+import secrets
 import uuid
-from urllib.parse import quote
+from datetime import timedelta
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
+from lab_manager.access_models import AccessGrant
 from lab_manager.audit import audit
 from lab_manager.catalog_models import Environment
 from lab_manager.dependencies import Actor, Problem
-from lab_manager.guacamole_auth import SSHConnection, issue_ssh_grant
 from lab_manager.models import Group, GroupMember
 from lab_manager.network_models import NetworkSegmentAllocation
 from lab_manager.reservation_models import LessonReservation
@@ -41,10 +42,26 @@ def may_open(actor, runtime, environment, membership) -> bool:
     )
 
 
+def launch_response(response: Response, environment: str, nonce: str) -> BrowserTerminal:
+    """Keep the one-time nonce out of URLs, JSON bodies and browser JavaScript."""
+    cookie_name = "__Secure-lab_guac_launch" if environment == "production" else "lab_guac_launch"
+    response.set_cookie(
+        key=cookie_name,
+        value=nonce,
+        max_age=45,
+        path="/guacamole",
+        secure=environment == "production",
+        httponly=True,
+        samesite="strict",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return BrowserTerminal(url="/guacamole/")
+
+
 @router.post("/runtimes/{runtime_id}/open", response_model=BrowserTerminal)
 async def open_runtime(runtime_id: uuid.UUID, actor: Actor, request: Request, response: Response):
-    secret = request.app.state.settings.guacamole_json_secret
-    if secret is None:
+    settings = request.app.state.settings
+    if not settings.guacamole_broker_enabled:
         raise Problem(503, "GUACAMOLE_NOT_CONFIGURED", "Браузерный терминал пока недоступен.")
     async with request.app.state.sessions() as db, db.begin():
         runtime = await db.get(Runtime, runtime_id)
@@ -93,28 +110,36 @@ async def open_runtime(runtime_id: uuid.UUID, actor: Actor, request: Request, re
             or allocation.state != "APPLIED"
             or credential is None
             or not credential.host_key
+            or not runtime.guest_ipv4
         ):
             raise Problem(409, "RUNTIME_NOT_AVAILABLE", "Машина пока недоступна.")
-        token = issue_ssh_grant(
-            secret.get_secret_value(),
-            actor_id=actor.id,
-            connection=SSHConnection(
+        await db.execute(
+            update(AccessGrant)
+            .where(
+                AccessGrant.browser_session_id == actor.session.id,
+                AccessGrant.runtime_id == runtime.id,
+                AccessGrant.consumed_at.is_(None),
+                AccessGrant.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+        nonce = secrets.token_urlsafe(32)
+        db.add(
+            AccessGrant(
+                nonce_digest=request.app.state.codec.digest("guacamole_launch", nonce),
+                user_id=actor.id,
+                browser_session_id=actor.session.id,
                 runtime_id=runtime.id,
-                address=runtime.guest_ipv4,
-                subnet=allocation.cidr,
-                username="root",
-                private_key=request.app.state.codec.decrypt(credential.private_key_ciphertext),
-                host_key=credential.host_key,
-            ),
-            now=now,
+                environment_run_id=run.id,
+                expires_at=now + timedelta(seconds=45),
+            )
         )
         audit(
             db,
             request,
             actor.id,
-            "runtime.browser_opened",
+            "runtime.browser_launch_requested",
             runtime.id,
             environment_id=str(environment.id),
         )
-    response.headers["Cache-Control"] = "no-store"
-    return BrowserTerminal(url="/guacamole/?data=" + quote(token, safe=""))
+    return launch_response(response, settings.environment, nonce)

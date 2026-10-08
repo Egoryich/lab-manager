@@ -2,8 +2,9 @@ import uuid
 from types import SimpleNamespace
 
 from cryptography.fernet import Fernet
+from fastapi import Response
 from lab_manager.config import Settings
-from lab_manager.runtime_access import may_open
+from lab_manager.runtime_access import launch_response, may_open
 
 
 def test_student_only_opens_current_own_machine_and_teacher_can_assist():
@@ -38,3 +39,20 @@ def test_blank_optional_guacamole_secret_keeps_api_available():
         guacamole_json_secret="",
     )
     assert settings.guacamole_json_secret is None
+
+
+def test_browser_launch_nonce_stays_in_scoped_httponly_cookie():
+    nonce = "one-time-secret-value"
+    response = Response()
+    result = launch_response(response, "production", nonce)
+    cookie = response.headers["set-cookie"]
+
+    assert result.model_dump() == {"url": "/guacamole/"}
+    assert nonce not in result.model_dump_json()
+    assert cookie.startswith("__Secure-lab_guac_launch=" + nonce + ";")
+    assert "HttpOnly" in cookie
+    assert "Secure" in cookie
+    assert "SameSite=strict" in cookie
+    assert "Path=/guacamole" in cookie
+    assert "Max-Age=45" in cookie
+    assert response.headers["Cache-Control"] == "no-store"
