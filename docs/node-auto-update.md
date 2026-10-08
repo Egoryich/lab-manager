@@ -223,3 +223,18 @@ python3 -c 'import json; print(json.load(open("/opt/lab-manager-node/update-stat
 /opt/lab-manager-node/current/venv/bin/python -c \
   'from importlib.metadata import version; print(version("lab-node-agent"))'
 ```
+
+## Обновление самого updater без переустановки агента
+
+09.10.2026 исправленный `tools/update-node.py` был установлен на Proxmox отдельно от выпуска агента. Пользователь подтвердил совпадение SHA-256 обоих загруженных файлов и строку `PASS: verified node updater installed; timer restored by cleanup`. Эта операция не меняет активный выпуск агента; после неё обычный таймер может принять следующий проверенный выпуск.
+
+Для повторения используйте полный SHA коммита и заранее проверенные SHA-256 скрипта установки и `update-node.py`. Не подставляйте хеши из непроверенного источника:
+
+```bash
+release='<FULL_VERIFIED_COMMIT_SHA>'
+script_sha256='<VERIFIED_INSTALL_SCRIPT_SHA256>'
+updater_sha256='<VERIFIED_UPDATER_SHA256>'
+curl -fsSLo /tmp/lm-upgrade-node-updater.sh "https://raw.githubusercontent.com/Egoryich/lab-manager/$release/tools/upgrade-node-updater.sh"
+printf '%s  %s\n' "$script_sha256" /tmp/lm-upgrade-node-updater.sh | sha256sum --check --strict
+bash /tmp/lm-upgrade-node-updater.sh "$release" "$updater_sha256"
+```
