@@ -34,6 +34,30 @@ SSH to `sudo -n bash -s` inside that VM. Keep the script file on Proxmox for
 inspection and execute each short command separately; never pipe an unchecked
 network response straight into a shell.
 
+The gateway has since joined Headscale. From the Proxmox host, the following
+read-only check returned the gateway's tailnet IPv4 and listed the VPS and
+Proxmox peers. Substitute the local bootstrap key, user and private VM address
+on another installation; do not save an authentication URL or preauth key in
+this guide:
+
+```bash
+ssh -i '<GUACAMOLE_BOOTSTRAP_KEY>' '<VM_USER>@<VM_PRIVATE_IP>' \
+  'tailscale ip -4; tailscale status'
+```
+
+The health warning that some peers advertise routes while `--accept-routes` is
+false is expected for this VM: it does not use tailnet subnet routes. Check
+reachability from the VPS separately before starting the private Guacamole
+stack:
+
+```bash
+tailscale ping '<GUACAMOLE_TAILNET_IP>'
+```
+
+The VPS check succeeded for the registered gateway: replies first used a relay
+and then a direct peer path. This verifies tailnet reachability, but not yet
+the Guacamole HTTP service or a connection to a student guest.
+
 This stack runs inside a dedicated infrastructure VM on Proxmox, not on the
 small VPS or the Proxmox host. It uses the official Guacamole 1.6.0 and guacd
 image digests. Only the VM's tailnet IPv4 binds port 8080; guacd has no
