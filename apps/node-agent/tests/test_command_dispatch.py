@@ -72,7 +72,7 @@ def command(node_id, *, kind="LXC_CREATE"):
     return payload
 
 
-def dispatcher(tmp_path, node_id, provider, inspected):
+def dispatcher(tmp_path, node_id, provider, inspected, readiness=lambda: {"ready": True}):
     journal = CommandJournal(tmp_path / "commands.sqlite3")
     return CommandDispatcher(
         node_id=node_id,
@@ -82,6 +82,7 @@ def dispatcher(tmp_path, node_id, provider, inspected):
         journal=journal,
         provider=provider,
         inspect_bridge=lambda spec: inspected.append(spec),
+        network_readiness=readiness,
     )
 
 
@@ -133,6 +134,19 @@ def test_task_success_requires_external_reconciliation(tmp_path):
     provider.task_result = {"status": "stopped", "exitstatus": "ERROR"}
     result = subject.status(uuid.UUID(payload["operation_id"]))
     assert result["state"] == "UNCERTAIN"
+    subject.journal.close()
+
+
+def test_start_records_failure_without_touching_proxmox_when_guard_is_down(tmp_path):
+    node_id = uuid.uuid4()
+    provider = Provider()
+    subject = dispatcher(tmp_path, node_id, provider, [], lambda: {"ready": False})
+    payload = command(node_id, kind="LXC_START")
+    result = subject.submit(encode(payload))
+    assert result["state"] == "FAILED"
+    assert result["error_code"] == "NETWORK_GUARD_NOT_READY"
+    assert subject.submit(encode(payload)) == result
+    assert provider.calls == []
     subject.journal.close()
 
 

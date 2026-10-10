@@ -97,10 +97,11 @@ def test_lxc_identity_is_required_both_before_and_after_link_enable():
     verify_lxc(admission, spec, config)
     config["net0"] = config["net0"].replace(",link_down=1", "")
     verify_lxc(admission, spec, config)
+    verify_lxc(admission, spec, {**config, "net0": config["net0"] + ",link_down=0"})
     for changed in (
         {**config, "description": "lab-manager:runtime=" + str(uuid.uuid4()) + ";generation=2"},
         {**config, "net0": config["net0"].replace("BC:24:11:AA:BB:CC", "BC:24:11:AA:BB:CD")},
-        {**config, "net0": config["net0"] + ",link_down=0"},
+        {**config, "net0": config["net0"] + ",link_down=2"},
     ):
         with pytest.raises(SegmentError):
             verify_lxc(admission, spec, changed)

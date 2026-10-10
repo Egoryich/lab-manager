@@ -142,7 +142,7 @@ class ProxmoxLxcProvider:
         )
 
     def _request(self, method: str, path: str, form: dict[str, str] | None = None):
-        if method not in ("GET", "POST") or not (
+        if method not in ("GET", "POST", "PUT") or not (
             path.startswith(f"/nodes/{self.config.node}/lxc")
             or path.startswith(f"/nodes/{self.config.node}/tasks/UPID%3A")
         ):
@@ -260,7 +260,20 @@ class ProxmoxLxcProvider:
         return config
 
     def start(self, vmid: int, runtime_id: uuid.UUID, generation: int):
-        self._owned(vmid, runtime_id, generation)
+        config = self._owned(vmid, runtime_id, generation)
+        net = str(config.get("net0", ""))
+        fields = net.split(",")
+        if (
+            fields.count("link_down=1") != 1
+            or not any(field.startswith("hwaddr=") for field in fields)
+            or "type=veth" not in fields
+        ):
+            raise LxcOperationError("GUEST_NETWORK_DRIFT")
+        enabled = ",".join(field for field in fields if field != "link_down=1")
+        self._request("PUT", f"/nodes/{self.config.node}/lxc/{vmid}/config", {"net0": enabled})
+        updated = self._owned(vmid, runtime_id, generation)
+        if str(updated.get("net0", "")) != enabled:
+            raise LxcOperationError("GUEST_NETWORK_DRIFT")
         return self._task(
             self._request("POST", f"/nodes/{self.config.node}/lxc/{vmid}/status/start")
         )

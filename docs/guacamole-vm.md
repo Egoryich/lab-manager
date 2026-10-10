@@ -49,7 +49,7 @@ vmid='<GUACAMOLE_VMID>'; test "$(qm config "$vmid" | sed -n 's/^name: //p')" = l
 
 Ответ HTTP 200 подтверждает доступность шлюза, но не доказывает браузерный вход студента или SSH-доступ к LXC. Эти проверки выполняются в сквозном сценарии занятия.
 
-В тот же день pull-updater Proxmox применил выпуск агента `5709d1baa8c4ecfcb3ac8d319a5d9487bc21c1fa`: `Result=success`, `ExecMainStatus=0`, службы агента, помощника сегментов, базовой защиты и защиты Guacamole — `active`. Закреплённый скрипт `configure-guacamole-source.sh` прошёл проверку SHA-256 и сохранил IP и bridge работающей Guacamole VM в root-owned конфигурации. Проверка через непривилегированного клиента помощника вернула `ready: true`. Это локальный факт Proxmox; принятие снимка и допуск на VPS проверяются отдельно.
+В тот же день pull-updater Proxmox применил выпуск агента `5709d1baa8c4ecfcb3ac8d319a5d9487bc21c1fa`: `Result=success`, `ExecMainStatus=0`, службы агента, помощника сегментов, базовой защиты и защиты Guacamole — `active`. Закреплённый скрипт `configure-guacamole-source.sh` прошёл проверку SHA-256 и сохранил IP и bridge работающей Guacamole VM в root-owned конфигурации. Проверка через непривилегированного клиента помощника вернула `ready: true`. VPS принял следующий снимок: `admission_ready=true`, `network_security.ready=true`, `error_code=OK`. Это подтверждает готовность инфраструктуры к размещению, но не запуск LXC или браузерный доступ студента.
 
 Команды для проверки следующей установки без адресов и секретов:
 

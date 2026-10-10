@@ -252,7 +252,7 @@ def verify_lxc(admission: Admission, segment: SegmentSpec, config: dict[str, str
         "ip6": "manual",
         "type": "veth",
     }
-    if net.pop("link_down", None) not in (None, "1"):
+    if net.pop("link_down", None) not in (None, "0", "1"):
         raise SegmentError("GUEST_NETWORK_DRIFT")
     if {key: value.lower() if key == "hwaddr" else value for key, value in net.items()} != expected:
         raise SegmentError("GUEST_NETWORK_DRIFT")

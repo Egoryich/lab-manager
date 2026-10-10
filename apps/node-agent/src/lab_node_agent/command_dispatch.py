@@ -66,6 +66,7 @@ class CommandDispatcher:
         journal: CommandJournal,
         provider,
         inspect_bridge,
+        network_readiness,
     ):
         self.node_id = node_id
         self.template = template
@@ -74,6 +75,7 @@ class CommandDispatcher:
         self.journal = journal
         self.provider = provider
         self.inspect_bridge = inspect_bridge
+        self.network_readiness = network_readiness
 
     def submit(self, body: bytes) -> dict:
         if len(body) > 16384:
@@ -133,6 +135,19 @@ class CommandDispatcher:
         if not created:
             return self._view(receipt)
         try:
+            if kind == "LXC_START":
+                try:
+                    ready = self.network_readiness().get("ready") is True
+                except SegmentError:
+                    ready = False
+                if not ready:
+                    receipt = self.journal.transition(
+                        operation_id,
+                        from_state="INTENT",
+                        to_state="FAILED",
+                        error_code="NETWORK_GUARD_NOT_READY",
+                    )
+                    return self._view(receipt)
             if kind == "LXC_CREATE":
                 try:
                     self.inspect_bridge(SegmentSpec.parse(payload["spec"]["segment"]))

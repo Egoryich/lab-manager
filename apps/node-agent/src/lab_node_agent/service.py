@@ -377,6 +377,7 @@ async def run(config_path):
                 )
             ),
             inspect_bridge=inspect_lab_bridge,
+            network_readiness=SegmentClient().readiness,
         )
     segments_enabled = config.get("segments_enabled", False)
     if type(segments_enabled) is not bool:

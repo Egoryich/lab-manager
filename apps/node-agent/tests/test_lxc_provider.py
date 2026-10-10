@@ -151,17 +151,31 @@ def test_start_and_shutdown_require_owned_unprivileged_guest(tmp_path, monkeypat
         "description": guest.marker,
         "unprivileged": 1,
         "onboot": 0,
-        "net0": f"name=eth0,bridge={guest.bridge},firewall=1,ip=manual",
+        "net0": (
+            f"name=eth0,bridge={guest.bridge},firewall=1,hwaddr=BC:24:11:00:00:00,"
+            "ip=10.70.1.2/29,gw=10.70.1.1,ip6=manual,link_down=1,type=veth"
+        ),
     }
-    subject = provider(tmp_path, monkeypatch, [config, TASK, config, TASK])
+    enabled = {**config, "net0": config["net0"].replace(",link_down=1", "")}
+    subject = provider(tmp_path, monkeypatch, [config, {}, enabled, TASK, config, TASK])
     assert subject.start(guest.vmid, guest.runtime_id, guest.generation) == TASK
     assert subject.shutdown(guest.vmid, guest.runtime_id, guest.generation) == TASK
-    assert subject.opener.requests[1].full_url.endswith("/lxc/200/status/start")
-    assert subject.opener.requests[3].full_url.endswith("/lxc/200/status/shutdown")
-    assert subject.opener.requests[3].data == b"timeout=60"
+    assert [r.get_method() for r in subject.opener.requests] == [
+        "GET",
+        "PUT",
+        "GET",
+        "POST",
+        "GET",
+        "POST",
+    ]
+    assert subject.opener.requests[1].full_url.endswith("/lxc/200/config")
+    assert b"link_down" not in subject.opener.requests[1].data
+    assert subject.opener.requests[3].full_url.endswith("/lxc/200/status/start")
+    assert subject.opener.requests[5].full_url.endswith("/lxc/200/status/shutdown")
+    assert subject.opener.requests[5].data == b"timeout=60"
 
     subject = provider(
-        tmp_path, monkeypatch, [{**config, "description": guest.marker + "\n"}, TASK]
+        tmp_path, monkeypatch, [{**config, "description": guest.marker + "\n"}, {}, enabled, TASK]
     )
     assert subject.start(guest.vmid, guest.runtime_id, guest.generation) == TASK
 
@@ -169,6 +183,11 @@ def test_start_and_shutdown_require_owned_unprivileged_guest(tmp_path, monkeypat
     with pytest.raises(LxcOperationError, match="GUEST_CONFIGURATION_DRIFT"):
         subject.start(guest.vmid, guest.runtime_id, guest.generation)
     assert len(subject.opener.requests) == 1
+
+    subject = provider(tmp_path, monkeypatch, [config, {}, config])
+    with pytest.raises(LxcOperationError, match="GUEST_NETWORK_DRIFT"):
+        subject.start(guest.vmid, guest.runtime_id, guest.generation)
+    assert [r.get_method() for r in subject.opener.requests] == ["GET", "PUT", "GET"]
 
 
 def test_task_status_reads_only_a_valid_task_id(tmp_path, monkeypatch):
