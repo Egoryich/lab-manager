@@ -16,6 +16,19 @@ source_rev=7288af3c64352f66b27d6c117b7dcafa397e099a
 tmp=$(mktemp -d)
 trap 'rm -f "$tmp/install-guacamole-egress.sh" "$tmp/render-guacamole-egress.py" "$tmp/lab-guacamole-egress.service"; rmdir "$tmp"' EXIT
 
+[[ "$vmid" =~ ^[1-9][0-9]{2,5}$ ]] && [ "$vmid" -lt 900000 ] || exit 2
+[[ "$bridge" =~ ^[a-z][a-z0-9]{1,14}$ ]] || exit 2
+[[ "$uplink" =~ ^[a-z][a-z0-9]{1,14}$ ]] || exit 2
+test "$bridge" != "$uplink"
+python3 - "$pool" <<'PY'
+import ipaddress
+import sys
+
+network = ipaddress.ip_network(sys.argv[1], strict=True)
+assert isinstance(network, ipaddress.IPv4Network)
+assert network.subnet_of(ipaddress.IPv4Network('10.70.0.0/16'))
+PY
+
 test "$(qm status "$vmid")" = 'status: running'
 test "$(qm config "$vmid" | sed -n 's/^name: //p')" = 'lab-guacamole'
 test ! -e /etc/systemd/system/lab-guacamole-egress.service
