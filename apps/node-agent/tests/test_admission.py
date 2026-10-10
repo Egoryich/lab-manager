@@ -1,10 +1,44 @@
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 
-from lab_node_agent.admission import Admission, AdmissionManager, AdmissionRequest, verify_lxc
+from lab_node_agent.admission import (
+    Admission,
+    AdmissionManager,
+    AdmissionRequest,
+    network_readiness,
+    verify_lxc,
+)
 from lab_node_agent.segments import SegmentError, SegmentSpec
+
+
+def test_live_network_readiness_closes_on_missing_firewall_unit(tmp_path):
+    (tmp_path / "vmbr1" / "bridge").mkdir(parents=True)
+    policy = tmp_path / "egress.nft"
+    policy.write_text('iifname "vmbr1" ip saddr 10.60.0.10 drop\n')
+    policy.chmod(0o600)
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(returncode=0)
+
+    arguments = dict(
+        source=lambda: {"address": "10.60.0.10", "bridge": "vmbr1"},
+        run=run,
+        bridge_root=tmp_path,
+        policy=policy,
+    )
+    assert network_readiness(**arguments) == {
+        "ready": True,
+        "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+    }
+    assert len(commands) == 7
+    assert network_readiness(
+        **{**arguments, "run": lambda *_args, **_kwargs: SimpleNamespace(returncode=1)}
+    ) == {"ready": False}
 
 
 def fixture():

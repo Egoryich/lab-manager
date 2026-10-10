@@ -73,6 +73,15 @@ def test_segment_helper_accepts_only_typed_create_and_status():
         )
 
 
+def test_readiness_is_read_only_and_rejects_extra_fields(monkeypatch):
+    from lab_node_agent import segment_daemon
+
+    monkeypatch.setattr(segment_daemon, "network_readiness", lambda: {"ready": False})
+    assert dispatch(b'{"action":"readiness"}', Manager()) == {"ready": False}
+    with pytest.raises(SegmentError, match="INVALID_SEGMENT_REQUEST"):
+        dispatch(b'{"action":"readiness","override":true}', Manager())
+
+
 def test_startup_recreates_persisted_bridges_and_reports_live_state():
     manager = Manager()
     allocation_id = uuid.uuid4()

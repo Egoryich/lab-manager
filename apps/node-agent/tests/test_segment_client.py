@@ -6,7 +6,25 @@ import uuid
 import pytest
 
 from lab_node_agent.segment_client import SegmentClient
-from lab_node_agent.segments import SegmentSpec
+from lab_node_agent.segments import SegmentError, SegmentSpec
+
+
+def test_readiness_client_requires_exact_root_response(monkeypatch):
+    client = SegmentClient()
+    monkeypatch.setattr(client, "_exchange", lambda request: {"ready": False})
+    assert client.readiness() == {"ready": False}
+    monkeypatch.setattr(
+        client,
+        "_exchange",
+        lambda request: {
+            "ready": True,
+            "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+        },
+    )
+    assert client.readiness()["ready"] is True
+    monkeypatch.setattr(client, "_exchange", lambda request: {"ready": True})
+    with pytest.raises(SegmentError, match="NETWORK_READINESS_INVALID"):
+        client.readiness()
 
 
 def test_gateway_client_checks_exact_owned_response(monkeypatch):

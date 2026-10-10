@@ -49,6 +49,20 @@ class SegmentClient:
         except (OSError, ValueError, TypeError) as error:
             raise SegmentError("SEGMENT_HELPER_UNAVAILABLE") from error
 
+    def readiness(self) -> dict:
+        result = self._exchange({"action": "readiness"})
+        if result == {"ready": False}:
+            return result
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"ready", "guacamole"}
+            or result["ready"] is not True
+            or not isinstance(result["guacamole"], dict)
+            or set(result["guacamole"]) != {"address", "bridge"}
+        ):
+            raise SegmentError("NETWORK_READINESS_INVALID")
+        return result
+
     def create(self, value: dict) -> dict:
         spec = SegmentSpec.parse(value)
         result = self._exchange(

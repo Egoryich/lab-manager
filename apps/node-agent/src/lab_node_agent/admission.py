@@ -157,6 +157,44 @@ def read_guacamole_source(path: Path = GUACAMOLE_SOURCE) -> dict[str, str]:
     return {"address": str(address), "bridge": value["bridge"]}
 
 
+def network_readiness(
+    source=read_guacamole_source,
+    run=subprocess.run,
+    bridge_root=Path("/sys/class/net"),
+    policy=Path("/etc/lab-manager-node/guacamole-egress.nft"),
+) -> dict:
+    """Read live root-owned prerequisites; any missing check keeps admission closed."""
+    try:
+        guacamole = source()
+        bridge = guacamole["bridge"]
+        if not (bridge_root / bridge / "bridge").is_dir():
+            return {"ready": False}
+        details = policy.stat()
+        rules = policy.read_text(encoding="utf-8")
+        if (
+            not policy.is_file()
+            or policy.is_symlink()
+            or (os.name == "posix" and (details.st_uid != 0 or details.st_mode & 0o022))
+            or f'iifname "{bridge}" ip saddr {guacamole["address"]}' not in rules
+        ):
+            return {"ready": False}
+        checks = (
+            ("/usr/bin/systemctl", "is-active", "--quiet", "lab-node-network-guard.service"),
+            ("/usr/bin/systemctl", "is-active", "--quiet", "lab-guacamole-egress.service"),
+            ("/usr/sbin/nft", "list", "table", "inet", "lab_manager"),
+            ("/usr/sbin/nft", "list", "table", "bridge", "lab_manager_l2"),
+            ("/usr/sbin/nft", "list", "table", "inet", "lab_guac_filter"),
+            ("/usr/sbin/nft", "list", "table", "ip", "lab_guac_nat"),
+            ("/usr/sbin/nft", "list", "table", "bridge", "lab_guac_l2"),
+        )
+        for command in checks:
+            if run(command, capture_output=True, timeout=3, check=False).returncode != 0:
+                return {"ready": False}
+        return {"ready": True, "guacamole": guacamole}
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired, SegmentError):
+        return {"ready": False}
+
+
 def read_lxc_config(vmid: int, directory: Path = LXC_CONFIG_DIR) -> dict[str, str]:
     """Read only the root-owned Proxmox config, without a shell or API token."""
     path = directory / f"{vmid}.conf"

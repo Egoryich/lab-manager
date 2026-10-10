@@ -137,6 +137,27 @@ def test_mtls_snapshot_boundary_and_freshness(tmp_path):
     asyncio.run(scenario())
 
 
+def test_inventory_admission_requires_live_root_helper():
+    class ReadySegments:
+        def readiness(self):
+            return {
+                "ready": True,
+                "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+            }
+
+    async def scenario():
+        service = SnapshotService(
+            Reader(), str(uuid.uuid4()), "a" * 64, segment_client=ReadySegments()
+        )
+        await service.refresh()
+        sample = json.loads(service.body)["sample"]
+        assert sample["admission_ready"] is True
+        assert sample["network_security"]["guacamole"]["bridge"] == "vmbr1"
+        assert "NETWORK_AND_GATEWAY_NOT_VERIFIED" not in sample["limitations"]
+
+    asyncio.run(scenario())
+
+
 def test_mtls_ssh_admission_only_dispatches_typed_requests(tmp_path):
     pins = certificates(tmp_path)
     allocation_id = uuid.uuid4()

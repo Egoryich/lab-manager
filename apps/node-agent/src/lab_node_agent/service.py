@@ -51,6 +51,16 @@ class SnapshotService:
                 local_storage = None
                 logger.info("local_storage_unavailable code=%s", error)
             sample = await asyncio.to_thread(collect, self.reader, local_storage)
+            if self.segment_client is not None:
+                try:
+                    readiness = await asyncio.to_thread(self.segment_client.readiness)
+                except SegmentError:
+                    readiness = {"ready": False}
+                sample["network_security"] = readiness
+                if readiness["ready"] is True:
+                    sample["admission_ready"] = True
+                    if "NETWORK_AND_GATEWAY_NOT_VERIFIED" in sample["limitations"]:
+                        sample["limitations"].remove("NETWORK_AND_GATEWAY_NOT_VERIFIED")
             body = json.dumps(
                 {"node_id": self.node_id, "agent_boot_id": self.boot_id, "sample": sample},
                 ensure_ascii=False,

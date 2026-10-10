@@ -8,7 +8,7 @@ import struct
 import uuid
 from pathlib import Path
 
-from lab_node_agent.admission import AdmissionManager, AdmissionRequest
+from lab_node_agent.admission import AdmissionManager, AdmissionRequest, network_readiness
 from lab_node_agent.segments import STATE_DIR, SegmentError, SegmentManager, SegmentSpec
 
 SOCKET = Path("/run/lab-manager-node/segments.sock")
@@ -35,6 +35,8 @@ def dispatch(
         if not isinstance(value, dict):
             raise ValueError("request object")
         action = value.get("action")
+        if action == "readiness" and set(value) == {"action"}:
+            return network_readiness()
         if action == "create" and set(value) == {"action", "spec"}:
             spec = SegmentSpec.parse(value["spec"])
             bridge = manager.create(spec)
