@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from types import SimpleNamespace
 
@@ -30,6 +31,7 @@ def test_live_network_readiness_closes_on_missing_firewall_unit(tmp_path):
         run=run,
         bridge_root=tmp_path,
         policy=policy,
+        required_uid=os.getuid() if os.name == "posix" else 0,
     )
     assert network_readiness(**arguments) == {
         "ready": True,

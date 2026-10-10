@@ -162,6 +162,7 @@ def network_readiness(
     run=subprocess.run,
     bridge_root=Path("/sys/class/net"),
     policy=Path("/etc/lab-manager-node/guacamole-egress.nft"),
+    required_uid=0,
 ) -> dict:
     """Read live root-owned prerequisites; any missing check keeps admission closed."""
     try:
@@ -174,7 +175,7 @@ def network_readiness(
         if (
             not policy.is_file()
             or policy.is_symlink()
-            or (os.name == "posix" and (details.st_uid != 0 or details.st_mode & 0o022))
+            or (os.name == "posix" and (details.st_uid != required_uid or details.st_mode & 0o022))
             or f'iifname "{bridge}" ip saddr {guacamole["address"]}' not in rules
         ):
             return {"ready": False}
