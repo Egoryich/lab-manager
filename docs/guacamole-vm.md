@@ -36,3 +36,24 @@ bash tools/activate-guacamole-egress.sh \
 ```
 
 Источники: [Debian cloud images](https://cloud.debian.org/images/cloud/trixie/latest/), [Proxmox Cloud-Init Support](https://pve.proxmox.com/wiki/Cloud-Init_Support).
+
+### Проверка на стенде 10 октября
+
+Обёртка из закреплённого выпуска прошла проверку SHA-256 и установила `lab-guacamole-egress.service` и файл правил. После её завершения служба была `active`, а выделенная Guacamole VM осталась `stopped`; итогового сообщения `PASS` от обёртки не было. Причина остановки финального запуска не установлена, поэтому результат обёртки нельзя считать полным успехом и повторять её поверх уже созданных файлов нельзя.
+
+После отдельной проверки имени VM, состояния службы и трёх таблиц nftables администратор запустил только Guacamole VM командой `qm start <GUACAMOLE_VMID>`; `qm status` вернул `running`. С VPS частный URL Guacamole ответил HTTP 200. Проверенная последовательность восстановления без адресов и секретов:
+
+```bash
+vmid='<GUACAMOLE_VMID>'; test "$(qm config "$vmid" | sed -n 's/^name: //p')" = lab-guacamole && systemctl is-active --quiet lab-guacamole-egress.service && nft list table inet lab_guac_filter >/dev/null && nft list table ip lab_guac_nat >/dev/null && nft list table bridge lab_guac_l2 >/dev/null && test "$(qm status "$vmid")" = 'status: stopped' && qm start "$vmid" && qm status "$vmid"
+```
+
+Ответ HTTP 200 подтверждает доступность шлюза, но не доказывает браузерный вход студента или SSH-доступ к LXC. Эти проверки выполняются в сквозном сценарии занятия.
+
+В тот же день pull-updater Proxmox применил выпуск агента `5709d1baa8c4ecfcb3ac8d319a5d9487bc21c1fa`: `Result=success`, `ExecMainStatus=0`, службы агента, помощника сегментов, базовой защиты и защиты Guacamole — `active`. Закреплённый скрипт `configure-guacamole-source.sh` прошёл проверку SHA-256 и сохранил IP и bridge работающей Guacamole VM в root-owned конфигурации. Проверка через непривилегированного клиента помощника вернула `ready: true`. Это локальный факт Proxmox; принятие снимка и допуск на VPS проверяются отдельно.
+
+Команды для проверки следующей установки без адресов и секретов:
+
+```bash
+systemctl start lab-node-update.service && systemctl show --no-pager lab-node-update.service -p Result -p ExecMainStatus && systemctl is-active lab-node-agent.service lab-node-segment-helper.service lab-node-network-guard.service lab-guacamole-egress.service
+runuser -u lab-node-agent -- /opt/lab-manager-node/current/venv/bin/python -c 'from lab_node_agent.segment_client import SegmentClient; s=SegmentClient().readiness(); print(s["ready"]); assert s["ready"] is True'
+```
