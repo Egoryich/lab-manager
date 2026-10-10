@@ -84,6 +84,44 @@ class NodeSegmentClient:
             else None
         )
 
+    def prepare_gateway(self, allocation_id: uuid.UUID, mode: str, cidr: str) -> dict:
+        """Bring up only the already allocated bridge gateway behind the deny-only guard."""
+        self._validate_gateway_input(allocation_id, mode, cidr)
+        value = self._request("PUT", f"/v1/segments/{allocation_id}/gateway", None)
+        expected = {
+            "allocation_id": str(allocation_id),
+            "mode": mode,
+            "cidr": cidr,
+            "bridge": bridge_name(allocation_id),
+            "gateway": str(ipaddress.IPv4Network(cidr).network_address + 1)
+            + f"/{ipaddress.IPv4Network(cidr).prefixlen}",
+            "state": "GATEWAY_PREPARED",
+        }
+        if value != expected:
+            raise NodeSegmentError("SEGMENT_RESPONSE_MISMATCH")
+        return value
+
+    def close_gateway(self, allocation_id: uuid.UUID, mode: str, cidr: str) -> dict:
+        """Close a gateway only after the node verifies that no guest ports remain."""
+        self._validate_gateway_input(allocation_id, mode, cidr)
+        value = self._request("DELETE", f"/v1/segments/{allocation_id}/gateway", None)
+        return validate_result(value, allocation_id, mode, cidr)
+
+    @staticmethod
+    def _validate_gateway_input(allocation_id: uuid.UUID, mode: str, cidr: str) -> None:
+        try:
+            network = ipaddress.IPv4Network(cidr, strict=True)
+        except (TypeError, ValueError) as error:
+            raise NodeSegmentError("INVALID_SEGMENT_SPEC") from error
+        if (
+            not isinstance(allocation_id, uuid.UUID)
+            or allocation_id.int == 0
+            or mode not in ("ISOLATED", "GROUP_LAN")
+            or not network.subnet_of(ipaddress.IPv4Network("10.70.0.0/16"))
+            or not 16 <= network.prefixlen <= 30
+        ):
+            raise NodeSegmentError("INVALID_SEGMENT_SPEC")
+
     def admit_ssh(self, admission: dict) -> dict:
         """Ask the node to verify one owned LXC before opening its SSH path."""
         if not isinstance(admission, dict) or set(admission) != {

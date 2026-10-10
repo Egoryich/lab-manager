@@ -131,3 +131,46 @@ def test_pinned_ssh_admission_and_revoke(tmp_path, monkeypatch):
         client.revoke_ssh(allocation_id)
     with pytest.raises(NodeSegmentError, match="INVALID_SSH_ADMISSION"):
         client.admit_ssh({**admission, "address": "192.168.0.1"})
+
+
+def test_gateway_lifecycle_requires_exact_node_response(tmp_path, monkeypatch):
+    for name in ("ca.pem", "client.pem", "client.key"):
+        (tmp_path / name).write_text("test")
+    endpoint = NodeEndpoint(
+        uuid.uuid4(),
+        "Lab",
+        "https://100.64.0.2:18443",
+        "pve",
+        hashlib.sha256(b"server-cert").hexdigest(),
+        tmp_path / "ca.pem",
+        tmp_path / "client.pem",
+        tmp_path / "client.key",
+    )
+    allocation_id = uuid.uuid4()
+    value = {
+        "allocation_id": str(allocation_id),
+        "mode": "ISOLATED",
+        "cidr": "10.70.1.0/30",
+        "bridge": bridge_name(allocation_id),
+        "gateway": "10.70.1.1/30",
+        "state": "GATEWAY_PREPARED",
+    }
+    connection = Connection(Response(200, value))
+    monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: Context())
+    monkeypatch.setattr(
+        "lab_manager.node_segments.http.client.HTTPSConnection",
+        lambda *args, **kwargs: connection,
+    )
+    client = NodeSegmentClient(endpoint)
+    assert client.prepare_gateway(allocation_id, "ISOLATED", "10.70.1.0/30") == value
+    assert connection.requests[-1][0:2] == ("PUT", f"/v1/segments/{allocation_id}/gateway")
+    connection.response = Response(200, {**value, "gateway": "10.70.1.1/29"})
+    with pytest.raises(NodeSegmentError, match="SEGMENT_RESPONSE_MISMATCH"):
+        client.prepare_gateway(allocation_id, "ISOLATED", "10.70.1.0/30")
+    connection.response = Response(
+        200, {key: item for key, item in value.items() if key != "gateway"} | {"state": "CREATED"}
+    )
+    assert client.close_gateway(allocation_id, "ISOLATED", "10.70.1.0/30")["state"] == "CREATED"
+    assert connection.requests[-1][0:2] == ("DELETE", f"/v1/segments/{allocation_id}/gateway")
+    with pytest.raises(NodeSegmentError, match="INVALID_SEGMENT_SPEC"):
+        client.prepare_gateway(allocation_id, "ISOLATED", "192.168.0.0/30")
