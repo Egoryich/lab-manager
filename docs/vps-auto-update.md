@@ -156,3 +156,13 @@ curl --fail --silent --show-error --max-time 15 \
 ```
 
 Следующий шаг — проверить страницу «Серверы» под Admin. Физически свободное место на этой странице не является автоматически доступным для новых машин; admission остаётся закрытым, пока не сверены постоянные дисковые обязательства, чужие машины и сеть.
+
+### Подтверждённый выпуск схемы доступа Guacamole
+
+10 октября пользователь выполнил проверку после автоматического обновления VPS до `8fad22b2e4a43acdbb51ac27dd8d564c9f9060e8`: `Result=success`, `ExecMainStatus=0`, в `state.json` указаны этот SHA и схема `0013_access_grants`, локальный API ответил `{"status":"ready"}`. Это подтверждает развёртывание брокера и миграций, но не доступ студентов к терминалу: сетевой допуск учебных машин остаётся закрытым.
+
+Успешно выполненная команда (без адреса сайта и секретов):
+
+```bash
+systemctl start lab-manager-update.service; systemctl show --no-pager lab-manager-update.service -p Result -p ExecMainStatus; python3 -c 'import json; s=json.load(open("/opt/lab-manager/update-state/state.json")); print("Выпуск:",s["active_sha"],"Схема:",s["schema_revision"])'; curl -fsS http://127.0.0.1:18000/api/health/ready; echo
+```
