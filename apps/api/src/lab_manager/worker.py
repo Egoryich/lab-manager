@@ -26,6 +26,7 @@ from lab_manager.config import Settings
 from lab_manager.dependencies import Problem
 from lab_manager.lesson_create_reconciliation import process as reconcile_lxc_creation
 from lab_manager.lesson_gateway_worker import process as prepare_lesson_gateway
+from lab_manager.lesson_lxc_start_reconciliation import process as reconcile_lxc_start
 from lab_manager.lesson_lxc_start_worker import process as queue_lxc_start
 from lab_manager.lesson_start_worker import process as process_lesson_start
 from lab_manager.models import User, UserRole
@@ -245,6 +246,8 @@ async def tick(sessions, worker_id, endpoints=(), codec=None):
     if await prepare_lesson_gateway(sessions, endpoints):
         return True
     if await queue_lxc_start(sessions, endpoints):
+        return True
+    if await reconcile_lxc_start(sessions):
         return True
     if await process_node_segment(sessions, endpoints):
         return True
