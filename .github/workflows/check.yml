@@ -31,7 +31,7 @@ jobs:
       - run: uv run --project apps/node-agent ruff check apps/node-agent
       - run: uv run --project apps/node-agent ruff format --check apps/node-agent
       - run: uv run --project apps/node-agent pytest apps/node-agent/tests -c apps/node-agent/pyproject.toml -q
-      - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/proxmox-lxc-smoke.sh tools/install-node-network-guard.sh tools/install-guacamole-egress.sh && python3 -m py_compile tools/update-node.py
+      - run: sh -n tools/install-node-updater.sh && bash -n tools/proxmox-network-smoke.sh tools/proxmox-forward-smoke.sh tools/proxmox-bridge-smoke.sh tools/proxmox-lxc-smoke.sh tools/install-node-network-guard.sh tools/install-guacamole-egress.sh tools/enable-node-commands.sh && python3 -m py_compile tools/update-node.py
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends nftables
       - run: sudo nft --check --file infra/proxmox/lab-network-guard.nft
       - name: Validate Guacamole egress policy syntax
