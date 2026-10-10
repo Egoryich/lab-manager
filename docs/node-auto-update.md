@@ -238,3 +238,13 @@ curl -fsSLo /tmp/lm-upgrade-node-updater.sh "https://raw.githubusercontent.com/E
 printf '%s  %s\n' "$script_sha256" /tmp/lm-upgrade-node-updater.sh | sha256sum --check --strict
 bash /tmp/lm-upgrade-node-updater.sh "$release" "$updater_sha256"
 ```
+
+После публикации проверенного выпуска агент `0.16.0` был установлен штатным `lab-node-update.service`. Пользователь подтвердил `Result=success`, `ExecMainStatus=0`, совпадение `active_sha` с опубликованным выпуском и состояние `active` для агента, помощника сегментов, сетевого предохранителя и таймера. Короткая проверка после каждого обновления:
+
+```bash
+systemctl start lab-node-update.service
+systemctl show --no-pager lab-node-update.service -p Result -p ExecMainStatus
+python3 -c 'import json; print(json.load(open("/opt/lab-manager-node/update-state/state.json"))["active_sha"])'
+/opt/lab-manager-node/current/venv/bin/python -c 'from importlib.metadata import version; print(version("lab-node-agent"))'
+systemctl is-active lab-node-agent.service lab-node-segment-helper.service lab-node-network-guard.service lab-node-update.timer
+```
