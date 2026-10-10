@@ -31,6 +31,23 @@ def test_empty_node_reconciles_without_opening_admission():
     assert result["admission_ready"] is False
 
 
+def test_root_network_evidence_opens_only_with_isolated_bridge_and_disk_claims():
+    data = sample()
+    data["admission_ready"] = True
+    data["network_security"] = {
+        "ready": True,
+        "guacamole": {"address": "10.60.0.10", "bridge": "vmbr1"},
+    }
+    data["network_bridges"] = [{"name": "vmbr1", "active": True, "ports": []}]
+    assert reconcile(data, [], [])["admission_ready"] is True
+
+    data["network_bridges"][0]["ports"] = ["nic0"]
+    assert reconcile(data, [], [])["admission_ready"] is False
+    data["network_bridges"][0]["ports"] = []
+    data["local_thin_sample_finished_at"] = (datetime.now(UTC) - timedelta(minutes=3)).isoformat()
+    assert reconcile(data, [], [])["admission_ready"] is False
+
+
 def test_guest_marker_requires_exact_database_binding():
     data = sample()
     runtime_id = uuid4()

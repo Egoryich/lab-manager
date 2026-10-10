@@ -218,8 +218,11 @@ def check_node(management_bridge, guest_bridge):
         raise RuntimeError("management bridge is not active with a physical port")
     if not guest or not guest["active"] or guest["ports"]:
         raise RuntimeError("guest bridge is missing, inactive or has a physical port")
-    if sample["admission_ready"] is not False:
-        raise RuntimeError("node admission state changed unexpectedly")
+    state = sample["admission_ready"]
+    if type(state) is not bool:
+        raise RuntimeError("node admission state invalid")
+    if state:
+        return f"mTLS inventory fresh; {guest_bridge} has no physical port; root firewall attested"
     return f"mTLS inventory fresh; {guest_bridge} has no physical port; admission remains closed"
 
 

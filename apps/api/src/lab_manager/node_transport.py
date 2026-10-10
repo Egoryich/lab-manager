@@ -116,8 +116,33 @@ def validate_observation(data, endpoint, now=None):
     sample = result.sample
     if result.node_id != endpoint.id or sample.get("node") != endpoint.node:
         raise NodeTransportError("NODE_IDENTITY_MISMATCH")
-    if sample.get("protocol_version") != 1 or sample.get("admission_ready") is not False:
+    if sample.get("protocol_version") != 1 or type(sample.get("admission_ready")) is not bool:
         raise NodeTransportError("UNSUPPORTED_INVENTORY")
+    security = sample.get("network_security")
+    if sample["admission_ready"] is True:
+        if (
+            not isinstance(security, dict)
+            or set(security) != {"ready", "guacamole"}
+            or security["ready"] is not True
+            or not isinstance(security["guacamole"], dict)
+            or set(security["guacamole"]) != {"address", "bridge"}
+        ):
+            raise NodeTransportError("NETWORK_ATTESTATION_INVALID")
+        try:
+            source = ipaddress.IPv4Address(security["guacamole"]["address"])
+        except (TypeError, ValueError) as error:
+            raise NodeTransportError("NETWORK_ATTESTATION_INVALID") from error
+        bridge = security["guacamole"]["bridge"]
+        if (
+            not source.is_private
+            or source in ipaddress.IPv4Network("10.70.0.0/16")
+            or not isinstance(bridge, str)
+            or not re.fullmatch(r"[a-z][a-z0-9]{1,14}", bridge)
+            or bridge.startswith("lmbr")
+        ):
+            raise NodeTransportError("NETWORK_ATTESTATION_INVALID")
+    elif security is not None and security != {"ready": False}:
+        raise NodeTransportError("NETWORK_ATTESTATION_INVALID")
     uuid.UUID(sample["snapshot_id"])
     start = datetime.fromisoformat(sample["sample_started_at"])
     end = datetime.fromisoformat(sample["sample_finished_at"])

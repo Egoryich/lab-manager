@@ -12,8 +12,8 @@ MARKER = re.compile(
 def reconcile(sample, bindings, disks):
     """Enrich a copy; uncertainty closes admission instead of guessing ownership.
 
-    The agent's `admission_ready` is deliberately false. A separate network
-    attestation is still required before a later step may change that flag.
+    Root-held live firewall evidence is necessary but not sufficient: this
+    process also requires matching bridges, guest ownership and disk claims.
     """
     sample = {**sample, "storages": [dict(item) for item in sample["storages"]]}
     limitations = set(sample.get("limitations", []))
@@ -123,6 +123,43 @@ def reconcile(sample, bindings, disks):
         if item.get("backend") == "lvmthin"
     ):
         limitations.discard("DISK_COMMITMENTS_NOT_RECONCILED")
+    security = sample.get("network_security")
+    guacamole = security.get("guacamole") if isinstance(security, dict) else None
+    bridges = sample.get("network_bridges")
+    isolated_bridge = (
+        isinstance(guacamole, dict)
+        and isinstance(bridges, list)
+        and len(
+            [
+                item
+                for item in bridges
+                if isinstance(item, dict)
+                and item.get("name") == guacamole.get("bridge")
+                and item.get("active") is True
+                and item.get("ports") == []
+            ]
+        )
+        == 1
+    )
+    ready = (
+        sample.get("admission_ready") is True
+        and isinstance(security, dict)
+        and security.get("ready") is True
+        and isolated_bridge
+        and ownership_ok
+        and any(item.get("backend") == "lvmthin" for item in sample["storages"])
+        and all(
+            item.get("commitments_reconciled") is True
+            for item in sample["storages"]
+            if item.get("backend") == "lvmthin"
+        )
+        and "LOCAL_STORAGE_MISMATCH" not in limitations
+        and "NETWORK_INVENTORY_UNAVAILABLE" not in limitations
+    )
+    if ready:
+        limitations.discard("NETWORK_AND_GATEWAY_NOT_VERIFIED")
+    else:
+        limitations.add("NETWORK_AND_GATEWAY_NOT_VERIFIED")
     sample["limitations"] = sorted(limitations)
-    sample["admission_ready"] = False
+    sample["admission_ready"] = ready
     return sample
