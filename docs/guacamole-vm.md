@@ -27,4 +27,12 @@ bash tools/install-guacamole-egress.sh \
 
 Установщик требует пустой bridge, работающий базовый защитный набор Lab Manager, IPv4 forwarding и выключенную VM с `onboot=0`. Он сохраняет только собственные таблицы nftables. **Политика учебных сегментов пока deny-only**, поэтому её отдельная настройка нужна до подключения Guacamole к LXC. После первого успешного запуска надо проверить `qm config`, доступность VM из Proxmox, отсутствие прямого доступа студентов и доступ Guacamole только через VPS. Затем отдельно включить `onboot=1` и сохранить реально выполненные команды и результаты в этом гайде. До этих проверок это подготовка, а не подтверждённый production gateway.
 
+Если тестовая VM уже работает, [обёртка](../tools/activate-guacamole-egress.sh) принимает те же VMID, bridge и диапазон лаборатории без путей к трём файлам. Она проверяет имя VM и аргументы **до** остановки, загружает файлы из закреплённого коммита и сверяет их SHA-256, затем останавливает только эту VM, вызывает установщик и запускает её снова. При ошибке после остановки VM остаётся выключенной для проверки; повторять установку вслепую нельзя. Выполнение этой обёртки на стенде пока не подтверждено.
+
+```bash
+bash tools/activate-guacamole-egress.sh \
+  '<GUACAMOLE_VMID>' '<DEDICATED_BRIDGE>' '<PUBLIC_UPLINK_BRIDGE>' \
+  '<LAB_ADDRESS_POOL>'
+```
+
 Источники: [Debian cloud images](https://cloud.debian.org/images/cloud/trixie/latest/), [Proxmox Cloud-Init Support](https://pve.proxmox.com/wiki/Cloud-Init_Support).
